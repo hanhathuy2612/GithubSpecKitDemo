@@ -13,6 +13,7 @@
 - Q: What rules must the new password satisfy? → A: 8–64 characters, no character-class requirements, and it must differ from the current password.
 - Q: How many reset requests are allowed per email and per IP address in a time window? → A: Max 3 requests per email per 15 minutes; max 20 requests per IP address per hour.
 - Q: Where do user accounts come from, given the repo has no account or sign-in system? → A: A minimal account store with seeded accounts; no sign-in endpoint or sessions. "Can sign in with the new password" is verified by the service's credential check; session sign-out is dropped from FR-013.
+- Q: How are reset emails delivered in this demo? → A: Via SMTP configured from environment variables; automated tests use a fake sender that captures messages; local runs deliver to a local mail-catcher inbox.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -127,6 +128,7 @@ a link after 15 minutes. Both must be rejected without changing the password.
 - **FR-015**: Raw reset tokens and passwords MUST NOT appear in logs, error messages, or analytics.
 - **FR-016**: The system SHOULD notify the account's email after a successful password change, so the owner can react if it was not them.
 - **FR-017**: Every endpoint introduced by this feature MUST have automated tests covering success, validation failures, and the edge cases above (Constitution III).
+- **FR-018**: Emails MUST be sent through a replaceable email-sender dependency. The default sender delivers via SMTP using connection settings from environment configuration; automated tests MUST use a fake sender that captures sent messages for assertions; local runs deliver to a local mail-catcher inbox so the link can be clicked manually.
 
 ### Key Entities
 
@@ -141,12 +143,12 @@ a link after 15 minutes. Both must be rejected without changing the password.
 - **SC-002**: 100% of reset links are rejected once 15 minutes have passed since issuance, and 100% are rejected on a second use (verified by automated tests).
 - **SC-003**: Responses for registered and unregistered emails are indistinguishable in message, status, and structure in 100% of test cases.
 - **SC-004**: Median response time for registered vs. unregistered emails differs by no more than 50 ms under normal load.
-- **SC-005**: Reset emails reach the user's inbox within 1 minute in 95% of requests.
+- **SC-005**: With a reachable SMTP server, the reset email is handed off to it within 5 seconds of the request in 95% of cases, and appears in the local mail-catcher inbox within 1 minute during local runs.
 - **SC-006**: Zero raw reset tokens are found in stored data or logs during security review.
 
 ## Assumptions
 
 - Accounts exist only as seeded records in a minimal account store; registration, sign-in endpoints and session management are out of scope (sign-in and session sign-out can be added by a later feature).
-- An email sending capability is available to the system.
+- An SMTP server (real or local mail-catcher) is reachable at runtime; its settings come from environment configuration.
 - Password policy for this feature is defined in FR-011 (8–64 characters, must differ from current password); no breached-password list check in this version.
 - Only one language for the messages is required initially; localization is out of scope.

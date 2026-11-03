@@ -5,6 +5,12 @@
 **Status**: Draft
 **Input**: User description: "Quên mật khẩu, đặt lại qua email. Người dùng nhập email và nhận link đặt lại; link hết hạn sau 15 phút và chỉ dùng được một lần; nếu email không tồn tại thì vẫn trả về cùng thông báo để tránh dò tìm tài khoản."
 
+## Clarifications
+
+### Session 2026-11-03
+
+- Q: Is the scope backend API endpoints only, or also the user-facing web pages? → A: API plus minimal server-rendered web UI (two HTML pages: "Forgot password" and "Set new password").
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Request a password reset link (Priority: P1)
@@ -101,7 +107,8 @@ a link after 15 minutes. Both must be rejected without changing the password.
 
 ### Functional Requirements
 
-- **FR-001**: System MUST provide a "Forgot password" form where a user enters an email address.
+- **FR-001**: System MUST provide a minimal server-rendered "Forgot password" page with a form where a user enters an email address, backed by a reset-request endpoint that can also be called directly.
+- **FR-001a**: System MUST provide a minimal server-rendered "Set new password" page, opened from the reset link, backed by a password-reset endpoint that can also be called directly. Both pages MUST show validation errors and result messages inline. A separate frontend application is out of scope.
 - **FR-002**: System MUST validate the email format and reject invalid input with a validation error before any lookup.
 - **FR-003**: System MUST normalize the email (trim spaces, case-insensitive match) before looking up the account.
 - **FR-004**: When the email belongs to an active account, the system MUST send that address one email containing a unique password reset link.

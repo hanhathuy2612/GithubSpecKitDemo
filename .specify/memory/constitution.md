@@ -10,10 +10,12 @@ Sync Impact Report
 - Added sections: Security Constraints, Development Workflow, Governance
 - Removed sections: none
 - Templates requiring updates:
-  - .specify/templates/plan-template.md ⚠ pending (template not present in repo;
-    Spec Kit CLI not initialized — Constitution Check gates must mirror principles I–IV)
-  - .specify/templates/spec-template.md ⚠ pending (not present in repo)
-  - .specify/templates/tasks-template.md ⚠ pending (not present; tests are mandatory per III)
+  - .specify/templates/plan-template.md ✅ compatible (Constitution Check gates are
+    derived from this file at plan time — must cover principles I–IV)
+  - .specify/templates/spec-template.md ✅ compatible (no changes needed)
+  - .specify/templates/tasks-template.md ⚠ note: template marks tests as OPTIONAL;
+    per Principle III, test tasks are REQUIRED for every endpoint — /speckit-tasks
+    MUST always generate them (specs should state this, e.g. 001 FR-017)
 - Follow-up TODOs: none
 -->
 

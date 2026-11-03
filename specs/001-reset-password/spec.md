@@ -12,6 +12,7 @@
 - Q: Is the scope backend API endpoints only, or also the user-facing web pages? → A: API plus minimal server-rendered web UI (two HTML pages: "Forgot password" and "Set new password").
 - Q: What rules must the new password satisfy? → A: 8–64 characters, no character-class requirements, and it must differ from the current password.
 - Q: How many reset requests are allowed per email and per IP address in a time window? → A: Max 3 requests per email per 15 minutes; max 20 requests per IP address per hour.
+- Q: Where do user accounts come from, given the repo has no account or sign-in system? → A: A minimal account store with seeded accounts; no sign-in endpoint or sessions. "Can sign in with the new password" is verified by the service's credential check; session sign-out is dropped from FR-013.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -38,21 +39,21 @@ confirmation is shown and exactly one reset email is delivered to that address.
 ### User Story 2 - Set a new password using the link (Priority: P1)
 
 The user opens the reset link from the email within 15 minutes, enters a new
-password (and its confirmation), and submits. The password is changed and the user
-can sign in with the new password.
+password (and its confirmation), and submits. The password is changed and the
+new password is accepted by the credential check.
 
 **Why this priority**: This completes the recovery; together with Story 1 it forms
 the minimum viable feature.
 
 **Independent Test**: Issue a link for a known account, open it within 15 minutes,
-set a new password, then confirm sign-in works with the new password and fails
-with the old one.
+set a new password, then confirm the credential check accepts the new password and rejects
+the old one.
 
 **Acceptance Scenarios**:
 
-1. **Given** a reset link issued less than 15 minutes ago and never used, **When** the user submits a valid new password, **Then** the password is updated, the user sees a success message, and they can sign in with the new password.
+1. **Given** a reset link issued less than 15 minutes ago and never used, **When** the user submits a valid new password, **Then** the password is updated, the user sees a success message, and the credential check accepts the new password.
 2. **Given** a valid link, **When** the user submits a new password shorter than 8 or longer than 64 characters, identical to the current password, or with a confirmation that does not match, **Then** the system shows a validation error, the password is not changed, and the link remains usable until it expires.
-3. **Given** a password was successfully reset, **When** the user tries to sign in with the old password, **Then** sign-in fails.
+3. **Given** a password was successfully reset, **When** the old password is checked against the account, **Then** the credential check rejects it.
 
 ---
 
@@ -102,7 +103,6 @@ a link after 15 minutes. Both must be rejected without changing the password.
 - Link opened at exactly the 15-minute boundary: a link is valid only while less than 15 minutes have elapsed since issuance.
 - Email delivery fails: the user still sees the generic confirmation (no disclosure); the failure is recorded for operators.
 - Excessive requests: the 4th request for the same email within 15 minutes, or the 21st request from the same IP within an hour, issues no link and sends no email; the requester still sees the generic confirmation (FR-014).
-- After a successful reset, other active sessions of that account are signed out.
 - Account is disabled/locked: treated like a non-existent account (generic message, no email).
 
 ## Requirements *(mandatory)*
@@ -122,7 +122,7 @@ a link after 15 minutes. Both must be rejected without changing the password.
 - **FR-010**: The system MUST NOT store the reset token in plain text; only a one-way hash of the token may be persisted (Constitution IV).
 - **FR-011**: Opening a valid link MUST let the user enter and confirm a new password. The new password MUST be 8–64 characters long (no character-class requirements), MUST match its confirmation, and MUST differ from the current password; otherwise the system shows a validation error stating which rule failed.
 - **FR-012**: Invalid, expired, used, or unknown links MUST all produce the same "invalid or expired" message and offer a way to request a new link.
-- **FR-013**: On successful reset, the system MUST update the password, mark the link as used, and sign out the account's other active sessions.
+- **FR-013**: On successful reset, the system MUST update the password and mark the link as used, as a single atomic operation.
 - **FR-014**: The system MUST rate-limit reset requests to at most 3 per normalized email per rolling 15 minutes and at most 20 per client IP address per rolling hour. Requests over the limit MUST NOT issue a link or send an email, and MUST receive the same generic confirmation as any other request (no disclosure of throttling).
 - **FR-015**: Raw reset tokens and passwords MUST NOT appear in logs, error messages, or analytics.
 - **FR-016**: The system SHOULD notify the account's email after a successful password change, so the owner can react if it was not them.
@@ -130,14 +130,14 @@ a link after 15 minutes. Both must be rejected without changing the password.
 
 ### Key Entities
 
-- **User Account**: Existing account identified by a unique email; has a password credential and an active/disabled status.
+- **User Account**: Account in a minimal account store, pre-populated with seeded accounts; identified by a unique (normalized) email; has a hashed password credential and an active/disabled status. Registration is out of scope.
 - **Password Reset Request**: One issued reset link for an account. Attributes: owning account, token hash (never the raw token), issued-at time, expires-at time (issued + 15 min), used-at time (empty until used), invalidated flag.
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: A user with access to their mailbox can go from "Forgot password" to signing in with a new password in under 3 minutes.
+- **SC-001**: A user with access to their mailbox can go from "Forgot password" to having a new password accepted in under 3 minutes.
 - **SC-002**: 100% of reset links are rejected once 15 minutes have passed since issuance, and 100% are rejected on a second use (verified by automated tests).
 - **SC-003**: Responses for registered and unregistered emails are indistinguishable in message, status, and structure in 100% of test cases.
 - **SC-004**: Median response time for registered vs. unregistered emails differs by no more than 50 ms under normal load.
@@ -146,8 +146,7 @@ a link after 15 minutes. Both must be rejected without changing the password.
 
 ## Assumptions
 
-- Users already have accounts identified by a unique email; registration and sign-in exist and are out of scope.
+- Accounts exist only as seeded records in a minimal account store; registration, sign-in endpoints and session management are out of scope (sign-in and session sign-out can be added by a later feature).
 - An email sending capability is available to the system.
 - Password policy for this feature is defined in FR-011 (8–64 characters, must differ from current password); no breached-password list check in this version.
-- Sign-out of other sessions after reset is the expected default for this product.
 - Only one language for the messages is required initially; localization is out of scope.

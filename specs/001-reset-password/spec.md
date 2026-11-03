@@ -11,6 +11,7 @@
 
 - Q: Is the scope backend API endpoints only, or also the user-facing web pages? → A: API plus minimal server-rendered web UI (two HTML pages: "Forgot password" and "Set new password").
 - Q: What rules must the new password satisfy? → A: 8–64 characters, no character-class requirements, and it must differ from the current password.
+- Q: How many reset requests are allowed per email and per IP address in a time window? → A: Max 3 requests per email per 15 minutes; max 20 requests per IP address per hour.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -100,7 +101,7 @@ a link after 15 minutes. Both must be rejected without changing the password.
 - User submits the new-password form twice concurrently with the same link: at most one submission succeeds; the other is rejected as already used.
 - Link opened at exactly the 15-minute boundary: a link is valid only while less than 15 minutes have elapsed since issuance.
 - Email delivery fails: the user still sees the generic confirmation (no disclosure); the failure is recorded for operators.
-- Excessive requests for the same email or from the same source: requests are rate limited, and the response to the requester remains the generic confirmation.
+- Excessive requests: the 4th request for the same email within 15 minutes, or the 21st request from the same IP within an hour, issues no link and sends no email; the requester still sees the generic confirmation (FR-014).
 - After a successful reset, other active sessions of that account are signed out.
 - Account is disabled/locked: treated like a non-existent account (generic message, no email).
 
@@ -122,7 +123,7 @@ a link after 15 minutes. Both must be rejected without changing the password.
 - **FR-011**: Opening a valid link MUST let the user enter and confirm a new password. The new password MUST be 8–64 characters long (no character-class requirements), MUST match its confirmation, and MUST differ from the current password; otherwise the system shows a validation error stating which rule failed.
 - **FR-012**: Invalid, expired, used, or unknown links MUST all produce the same "invalid or expired" message and offer a way to request a new link.
 - **FR-013**: On successful reset, the system MUST update the password, mark the link as used, and sign out the account's other active sessions.
-- **FR-014**: The system MUST rate-limit reset requests per email and per source, without changing the response shown to the requester.
+- **FR-014**: The system MUST rate-limit reset requests to at most 3 per normalized email per rolling 15 minutes and at most 20 per client IP address per rolling hour. Requests over the limit MUST NOT issue a link or send an email, and MUST receive the same generic confirmation as any other request (no disclosure of throttling).
 - **FR-015**: Raw reset tokens and passwords MUST NOT appear in logs, error messages, or analytics.
 - **FR-016**: The system SHOULD notify the account's email after a successful password change, so the owner can react if it was not them.
 - **FR-017**: Every endpoint introduced by this feature MUST have automated tests covering success, validation failures, and the edge cases above (Constitution III).
@@ -148,6 +149,5 @@ a link after 15 minutes. Both must be rejected without changing the password.
 - Users already have accounts identified by a unique email; registration and sign-in exist and are out of scope.
 - An email sending capability is available to the system.
 - Password policy for this feature is defined in FR-011 (8–64 characters, must differ from current password); no breached-password list check in this version.
-- Rate-limit thresholds (e.g., max 5 requests per email per hour) will be confirmed during planning; the exact numbers do not change the behavior described here.
 - Sign-out of other sessions after reset is the expected default for this product.
 - Only one language for the messages is required initially; localization is out of scope.

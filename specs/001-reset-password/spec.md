@@ -10,6 +10,7 @@
 ### Session 2026-11-03
 
 - Q: Is the scope backend API endpoints only, or also the user-facing web pages? → A: API plus minimal server-rendered web UI (two HTML pages: "Forgot password" and "Set new password").
+- Q: What rules must the new password satisfy? → A: 8–64 characters, no character-class requirements, and it must differ from the current password.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -49,7 +50,7 @@ with the old one.
 **Acceptance Scenarios**:
 
 1. **Given** a reset link issued less than 15 minutes ago and never used, **When** the user submits a valid new password, **Then** the password is updated, the user sees a success message, and they can sign in with the new password.
-2. **Given** a valid link, **When** the user submits a new password that does not meet the password policy or a confirmation that does not match, **Then** the system shows a validation error, the password is not changed, and the link remains usable until it expires.
+2. **Given** a valid link, **When** the user submits a new password shorter than 8 or longer than 64 characters, identical to the current password, or with a confirmation that does not match, **Then** the system shows a validation error, the password is not changed, and the link remains usable until it expires.
 3. **Given** a password was successfully reset, **When** the user tries to sign in with the old password, **Then** sign-in fails.
 
 ---
@@ -118,7 +119,7 @@ a link after 15 minutes. Both must be rejected without changing the password.
 - **FR-008**: Issuing a new reset link for an account MUST invalidate all previously issued unused links for that account.
 - **FR-009**: The reset link MUST contain an unguessable token generated from a cryptographically secure random source.
 - **FR-010**: The system MUST NOT store the reset token in plain text; only a one-way hash of the token may be persisted (Constitution IV).
-- **FR-011**: Opening a valid link MUST let the user enter and confirm a new password that satisfies the existing password policy.
+- **FR-011**: Opening a valid link MUST let the user enter and confirm a new password. The new password MUST be 8–64 characters long (no character-class requirements), MUST match its confirmation, and MUST differ from the current password; otherwise the system shows a validation error stating which rule failed.
 - **FR-012**: Invalid, expired, used, or unknown links MUST all produce the same "invalid or expired" message and offer a way to request a new link.
 - **FR-013**: On successful reset, the system MUST update the password, mark the link as used, and sign out the account's other active sessions.
 - **FR-014**: The system MUST rate-limit reset requests per email and per source, without changing the response shown to the requester.
@@ -146,7 +147,7 @@ a link after 15 minutes. Both must be rejected without changing the password.
 
 - Users already have accounts identified by a unique email; registration and sign-in exist and are out of scope.
 - An email sending capability is available to the system.
-- The existing password policy (length/complexity) is reused; this feature does not define a new one.
+- Password policy for this feature is defined in FR-011 (8–64 characters, must differ from current password); no breached-password list check in this version.
 - Rate-limit thresholds (e.g., max 5 requests per email per hour) will be confirmed during planning; the exact numbers do not change the behavior described here.
 - Sign-out of other sessions after reset is the expected default for this product.
 - Only one language for the messages is required initially; localization is out of scope.

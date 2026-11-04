@@ -162,20 +162,20 @@ The same single project as 001:
 
 ### Tests (write first, must FAIL)
 
-- [ ] T025 [P] [US2] Unit tests for `RegistrationService` in `test/unit/RegistrationServiceTest.java`:
+- [X] T025 [P] [US2] Unit tests for `RegistrationService` in `test/unit/RegistrationServiceTest.java`:
   - **no account**: older unused links for the email are invalidated, a new hashed 24-hour link is stored, a registration-link email is sent, and **no account** is created;
   - **ACTIVE email**: an "attempted registration" email with no link is sent and nothing is stored;
   - **DISABLED email**: nothing is sent or stored;
   - every branch returns the same outcome and never calls `passwordEncoder`;
   - `checkLink` never consumes the link;
   - `completeRegistration`: a valid link and password → ACTIVE account created and link used; 001 rule failures → violations, no account, link still usable; exactly at 24 h, used, invalidated, unknown or malformed → `INVALID`; the unique email constraint violation (a racing completion) → `INVALID`.
-- [ ] T026 [P] [US2] API tests in `test/api/RegisterApiTest.java`:
+- [X] T026 [P] [US2] API tests in `test/api/RegisterApiTest.java`:
   - new, pending (a link already sent), active and disabled emails → a byte-identical `202 {"message":"Check your email to finish creating your account."}`;
   - the email captured per case is: a registration link for new and pending, a notice for active (subject "Someone tried to create an account with your email", no `complete-registration` link), and nothing for disabled;
   - an invalid email → `400 /problems/validation` and no email;
   - the 4th registration for one email within 15 min → the identical 202 with no email;
   - no `user_account` row exists after registering until the link is completed.
-- [ ] T027 [P] [US2] Page tests in `test/page/CompleteRegistrationPageTest.java`:
+- [X] T027 [P] [US2] Page tests in `test/page/CompleteRegistrationPageTest.java`:
   - GET with a valid link → the form with the hidden token, and the link is not consumed (a following POST succeeds);
   - POST with a valid password → "Your account is ready. You can now sign in.", the account is ACTIVE, and sign-in with that password → 200;
   - POST with a rule failure → an inline error, the form is kept, and the link is still usable;
@@ -186,8 +186,8 @@ The same single project as 001:
 
 ### Implementation
 
-- [ ] T028 [P] [US2] Create `main/mail/AuthEmailComposer.java` with `registrationLink(rawToken)` (a link to `${app.base-url}/complete-registration?token=…`, the text "expires in 24 hours", and "If you did not ask to create an account, ignore this email.") and `attemptedRegistration()` (offers only sign-in and `/forgot-password`, with no token). Add `@Async("mailExecutor")` `sendRegistrationLink(email, rawToken)` and `sendAttemptedRegistration(accountId, email)` to `main/mail/ResetMailDispatcher.java`, using the same failure logging (no email in logs)
-- [ ] T029 [US2] Create `main/service/auth/RegistrationService.java` (research R6, R8):
+- [X] T028 [P] [US2] Create `main/mail/AuthEmailComposer.java` with `registrationLink(rawToken)` (a link to `${app.base-url}/complete-registration?token=…`, the text "expires in 24 hours", and "If you did not ask to create an account, ignore this email.") and `attemptedRegistration()` (offers only sign-in and `/forgot-password`, with no token). Add `@Async("mailExecutor")` `sendRegistrationLink(email, rawToken)` and `sendAttemptedRegistration(accountId, email)` to `main/mail/ResetMailDispatcher.java`, using the same failure logging (no email in logs)
+- [X] T029 [US2] Create `main/service/auth/RegistrationService.java` (research R6, R8):
   - `register(rawEmail, clientIp)`:
     1. Normalize the email, and always generate and hash a token.
     2. Apply the 001 `RateLimiter` keys `register-email:` and `register-ip:` (3 per 15 min, 20 per hour); over the limit → same outcome.
@@ -201,9 +201,9 @@ The same single project as 001:
     4. In one `TransactionTemplate`: `markUsedIfUsable == 1`, then save `UserAccount.active(email, hash, now)`.
     5. A `DataIntegrityViolationException` or 0 rows → `INVALID`.
     6. Log `auth.registration_completed accountId=`.
-- [ ] T030 [US2] Make `AfterCommit` public in `main/service/AfterCommit.java`, so `service/auth` can use it
-- [ ] T031 [P] [US2] Add DTO `RegisterRequest(@NotBlank @Email @Size(max=254) email)` (email stripped; unknown JSON fields such as `password` are ignored) and `POST /api/auth/register` → 202 to `AuthApiController`
-- [ ] T032 [P] [US2] Create `main/web/page/CompleteRegistrationPageController.java`, with `GET` and `POST /complete-registration`, an optional `token`, and the no-referrer and no-store headers. It maps outcomes to the templates `src/main/resources/templates/complete-registration.html` (form with hidden token and inline errors), `registration-complete.html` and `registration-invalid.html` (message plus a link to register again). Map messages like the 001 `PasswordResetPageController`
+- [X] T030 [US2] Make `AfterCommit` public in `main/service/AfterCommit.java`, so `service/auth` can use it
+- [X] T031 [P] [US2] Add DTO `RegisterRequest(@NotBlank @Email @Size(max=254) email)` (email stripped; unknown JSON fields such as `password` are ignored) and `POST /api/auth/register` → 202 to `AuthApiController`
+- [X] T032 [P] [US2] Create `main/web/page/CompleteRegistrationPageController.java`, with `GET` and `POST /complete-registration`, an optional `token`, and the no-referrer and no-store headers. It maps outcomes to the templates `src/main/resources/templates/complete-registration.html` (form with hidden token and inline errors), `registration-complete.html` and `registration-invalid.html` (message plus a link to register again). Map messages like the 001 `PasswordResetPageController`
 
 **Checkpoint**: T025–T027 pass, and US1 still passes.
 

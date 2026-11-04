@@ -8,6 +8,8 @@ public final class ResetMessages {
     public static final String RESET_DONE = "Your password has been reset.";
     public static final String INVALID_LINK = "This link is invalid or has expired.";
     public static final String INVALID_EMAIL = "Must be a valid email address.";
+    public static final String REGISTRATION_ACCEPTED = "Check your email to finish creating your account.";
+    public static final String REGISTRATION_DONE = "Your account is ready. You can now sign in.";
 
     public static String message(com.example.resetpassword.service.PasswordViolation violation) {
         return switch (violation) {

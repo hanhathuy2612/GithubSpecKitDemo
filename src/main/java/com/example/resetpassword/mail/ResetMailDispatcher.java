@@ -16,11 +16,24 @@ public class ResetMailDispatcher {
     private static final Logger log = LoggerFactory.getLogger(ResetMailDispatcher.class);
 
     private final ResetEmailComposer composer;
+    private final AuthEmailComposer authComposer;
     private final EmailSender sender;
 
-    public ResetMailDispatcher(ResetEmailComposer composer, EmailSender sender) {
+    public ResetMailDispatcher(ResetEmailComposer composer, AuthEmailComposer authComposer, EmailSender sender) {
         this.composer = composer;
+        this.authComposer = authComposer;
         this.sender = sender;
+    }
+
+    /** 002: registration link for an email that has no account yet (no account id exists). */
+    @Async("mailExecutor")
+    public void sendRegistrationLink(String email, String rawToken) {
+        send(0L, email, authComposer.registrationLink(rawToken), "registration_link");
+    }
+
+    @Async("mailExecutor")
+    public void sendAttemptedRegistration(long accountId, String email) {
+        send(accountId, email, authComposer.attemptedRegistration(), "attempted_registration");
     }
 
     @Async("mailExecutor")

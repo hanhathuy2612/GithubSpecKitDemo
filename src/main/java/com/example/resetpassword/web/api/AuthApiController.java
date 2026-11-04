@@ -2,6 +2,10 @@ package com.example.resetpassword.web.api;
 
 import com.example.resetpassword.service.auth.AccountQueryService;
 import com.example.resetpassword.service.auth.AuthSessionService;
+import com.example.resetpassword.service.auth.RegistrationService;
+import com.example.resetpassword.web.ResetMessages;
+import com.example.resetpassword.web.api.dto.MessageResponse;
+import com.example.resetpassword.web.api.dto.RegisterRequest;
 import com.example.resetpassword.service.auth.SignInOutcome;
 import com.example.resetpassword.service.auth.SignInService;
 import com.example.resetpassword.web.api.dto.MeResponse;
@@ -33,11 +37,21 @@ public class AuthApiController {
     private final SignInService signIn;
     private final AuthSessionService sessions;
     private final AccountQueryService accounts;
+    private final RegistrationService registration;
 
-    public AuthApiController(SignInService signIn, AuthSessionService sessions, AccountQueryService accounts) {
+    public AuthApiController(SignInService signIn, AuthSessionService sessions, AccountQueryService accounts,
+            RegistrationService registration) {
         this.signIn = signIn;
         this.sessions = sessions;
         this.accounts = accounts;
+        this.registration = registration;
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<MessageResponse> register(@Valid @RequestBody RegisterRequest body,
+            HttpServletRequest request) {
+        registration.register(body.email(), request.getRemoteAddr());
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(new MessageResponse(ResetMessages.REGISTRATION_ACCEPTED));
     }
 
     @PostMapping("/sign-in")

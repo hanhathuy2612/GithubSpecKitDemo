@@ -1,5 +1,7 @@
 # Specification Quality Checklist: Forgot Password – Reset via Email
 
+> Frozen after delivery (2026-11-04).
+
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-11-03
 **Feature**: [spec.md](../spec.md)

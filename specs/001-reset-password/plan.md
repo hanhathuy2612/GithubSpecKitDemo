@@ -58,16 +58,15 @@ No violations. Complexity Tracking is empty.
 
 ```text
 specs/001-reset-password/
-├── plan.md              # This file (/speckit-plan command output)
-├── research.md          # Phase 0 output (/speckit-plan command)
-├── data-model.md        # Phase 1 output (/speckit-plan command)
-├── quickstart.md        # Phase 1 output (/speckit-plan command)
-├── contracts/           # Phase 1 output (/speckit-plan command)
-│   ├── rest-api.md
-│   ├── web-pages.md
-│   └── emails.md
-└── tasks.md             # Phase 2 output (/speckit-tasks command - NOT created by /speckit-plan)
+├── spec.md              # What and why: source of truth for behavior (living)
+├── plan.md              # This file: stack, constitution check, design summary (living)
+├── research.md          # Technical decisions and rationale R1–R13 (living)
+├── tasks.md             # Implementation log, frozen after delivery
+└── checklists/          # Spec quality checklist, frozen
 ```
+
+Field-level details (tables, JSON shapes, page templates, email text) live in the code and are
+verified by tests. They are not duplicated here (see Design Summary).
 
 ### Source Code (repository root)
 
@@ -105,6 +104,33 @@ src/test/java/com/example/resetpassword/
 **Structure Decision**: A single Gradle project. The split between `web` and `service`
 makes Principles I–II visible in the package layout. A separate frontend is out of scope
 per the spec's clarification, so the frontend/backend split isn't used.
+
+## Design Summary
+
+Short reference for reviewers. The linked code and tests are authoritative.
+
+### Data model
+
+| Table | Key rules | Source |
+|-------|-----------|--------|
+| `user_account` | `email` unique and stored normalized (trimmed, lower-case); `password_hash` BCrypt(12); `status` `ACTIVE`/`DISABLED`; seeded only (alice, bob active; disabled@ disabled; password `demo-password-1`) | `db/migration/V1__schema.sql`, `V2__seed_accounts.sql` |
+| `password_reset_token` | `token_hash` = SHA-256 hex (64 chars, unique), never the raw token; `expires_at = issued_at + 15 min`; `used_at` and `invalidated_at` are nullable | `V1__schema.sql`, `domain/PasswordResetToken.java` |
+
+**Token lifecycle:** a token is usable only while `used_at IS NULL AND invalidated_at IS NULL AND now < expires_at` (strict, so it is expired at exactly 15:00). Issuing a new token invalidates the account's unused tokens. A successful reset sets `used_at` through a conditional UPDATE in the same transaction as the password change (R8). Used, invalidated, expired, unknown and malformed tokens are all reported identically.
+
+**Rate limits (in memory, R6):** 3 per normalized email per rolling 15 minutes, and 20 per client IP per rolling hour. Checked before the account lookup.
+
+### Interfaces
+
+| Endpoint | Behavior | Tests |
+|----------|----------|-------|
+| `POST /api/password-reset/requests` `{email}` | Always `202` with one fixed message for known, unknown, disabled and throttled emails. `400 /problems/validation` for a bad email format | `RequestResetApiTest`, `EnumerationApiTest`, `EnumerationTimingTest` |
+| `POST /api/password-reset/confirm` `{token,newPassword,confirmPassword}` | `200` on success. `400 /problems/validation` with `code` `TOO_SHORT`/`TOO_LONG`/`SAME_AS_CURRENT`/`MISMATCH` (token not consumed). `400 /problems/invalid-reset-token` for every token failure. Token checks run before password rules | `ConfirmResetApiTest`, `InvalidTokenApiTest`, `ConcurrentConfirmApiTest` |
+| `GET/POST /forgot-password` | Same service call as the API. The page never echoes the email, so it is identical for every account | `ForgotPasswordPageTest` |
+| `GET/POST /reset-password?token=` | GET only checks the token (never consumes it). Sends `Referrer-Policy: no-referrer` and `Cache-Control: no-store`. Invalid links render `reset-invalid` | `ResetPasswordPageTest`, `InvalidLinkPageTest` |
+| Email: "Reset your password" / "Your password was changed" | Sent via the `EmailSender` port after commit, asynchronously. Failures are logged by account id only | `mail/ResetEmailComposer.java`, `EmailFailureApiTest`, `EmailHandoffLatencyTest` |
+
+Secrecy guarantees (FR-010, FR-015, SC-006) are verified by `LogSecrecyTest` and `TokenStorageTest`. Run instructions are in the [README](../../README.md).
 
 ## Complexity Tracking
 

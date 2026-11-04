@@ -78,4 +78,4 @@ chosen by the project owner on 2026-11-03.
   - Unit tests for `PasswordResetService`, `PasswordPolicy`, `TokenGenerator` and the rate limiter, using a `MutableClock` and fakes.
   - `@SpringBootTest` + MockMvc tests for each of the 6 endpoints (2 API, 4 page), covering success, validation and every spec edge case. A concurrency test fires two parallel confirms and expects exactly one success.
   - A timing test (SC-004) compares median latency over N=50 requests for known vs. unknown emails and asserts a difference of at most 50 ms. It is tagged `timing` so it can run separately if CI is noisy.
-- **Rationale**: Every acceptance scenario maps to at least one automated test (see quickstart.md).
+- **Rationale**: Every acceptance scenario maps to at least one automated test (see the Interfaces table in plan.md › Design Summary).

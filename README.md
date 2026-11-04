@@ -10,13 +10,11 @@ The project follows the [constitution](.specify/memory/constitution.md): thin co
 
 ## Documents
 
-| | |
-|---|---|
-| Specification | [specs/001-reset-password/spec.md](specs/001-reset-password/spec.md) |
-| Plan and design decisions | [plan.md](specs/001-reset-password/plan.md), [research.md](specs/001-reset-password/research.md) |
-| Data model and contracts | [data-model.md](specs/001-reset-password/data-model.md), [contracts/](specs/001-reset-password/contracts/) |
-| Run and validation guide | [quickstart.md](specs/001-reset-password/quickstart.md) |
-| Tasks | [tasks.md](specs/001-reset-password/tasks.md) |
+Each feature keeps a few living documents: the spec (what and why), the plan (stack, constitution check, design summary) and the research (decisions). Field-level details live in the code and tests.
+
+| Feature | Spec | Plan and decisions | Implementation log |
+|---|---|---|---|
+| 001 Reset password | [spec.md](specs/001-reset-password/spec.md) | [plan.md](specs/001-reset-password/plan.md), [research.md](specs/001-reset-password/research.md) | [tasks.md](specs/001-reset-password/tasks.md) (frozen) |
 
 ## Quick start
 
@@ -29,6 +27,18 @@ docker compose up -d mailpit           # local SMTP :1025, inbox UI at http://lo
 ```
 
 Demo accounts: `alice@example.com` and `bob@example.com` (active), `disabled@example.com` (disabled). Their initial password is `demo-password-1`.
+
+## Manual end-to-end check (001)
+
+With Mailpit and `bootRun` running:
+
+1. Open `http://localhost:8080/forgot-password` and submit `alice@example.com`. **Expect**: the generic confirmation message.
+2. Open the Mailpit UI. **Expect**: one "Reset your password" email with a link.
+3. Submit `nobody@example.com`. **Expect**: the same page as step 1, and no new email.
+4. Click the link and set a new password (8–64 characters) twice. **Expect**: "Your password has been reset", plus a "Your password was changed" email.
+5. Click the same link again. **Expect**: "This link is invalid or has expired."
+6. Request 4 links for `bob@example.com` within 15 minutes. **Expect**: 4 identical pages, but only 3 emails.
+7. Check the application log. **Expect**: only `password_reset.*` events with account ids, and no token, password or email.
 
 ## Endpoints
 

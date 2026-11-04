@@ -5,6 +5,8 @@ description: "Task list for 001-reset-password (Forgot Password – Reset via Em
 
 # Tasks: Forgot Password – Reset via Email
 
+> **Status: COMPLETED and FROZEN (2026-11-04).** This file is the implementation log. Do not update it; later changes start from `spec.md`. `data-model.md`, `contracts/` and `quickstart.md`, referenced below, were merged into `plan.md` › Design Summary and the root `README.md` after delivery.
+
 **Input**: Design documents from `/specs/001-reset-password/`
 
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/, quickstart.md

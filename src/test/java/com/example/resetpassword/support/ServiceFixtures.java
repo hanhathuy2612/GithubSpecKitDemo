@@ -38,6 +38,10 @@ public class ServiceFixtures {
                 org.mockito.ArgumentMatchers.any())).thenReturn(true);
     }
 
+    public PlatformTransactionManager transactionManager() {
+        return new NoOpTransactionManager();
+    }
+
     public PasswordResetService service() {
         return new PasswordResetService(accounts, tokens, tokenGenerator, mail, clock, rateLimiter,
                 new PasswordPolicy(passwordEncoder), passwordEncoder, new NoOpTransactionManager());

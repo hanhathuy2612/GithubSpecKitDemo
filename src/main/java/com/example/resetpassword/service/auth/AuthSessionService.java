@@ -12,11 +12,14 @@ import com.example.resetpassword.security.TokenGenerator;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Sessions, refresh-token rotation and revocation (002 research R4, R5). */
@@ -65,6 +68,67 @@ public class AuthSessionService {
             accounts.bumpSessionVersion(accountId);
             log.info("auth.sessions_revoked reason={} count={} accountId={}", reason, revoked, accountId);
         });
+    }
+
+    /**
+     * Research R4: rotate on success; a rotated token presented again (including the loser of a concurrent double
+     * refresh) revokes the whole session. Every failure is reported as empty.
+     */
+    public Optional<IssuedCredentials> refresh(String rawRefreshToken) {
+        if (!tokenGenerator.isWellFormed(rawRefreshToken)) {
+            log.info("auth.refresh outcome=invalid reason=malformed");
+            return Optional.empty();
+        }
+        String hash = tokenGenerator.hash(rawRefreshToken);
+        try {
+            return tx.execute(status -> refreshInTransaction(hash));
+        } catch (DataAccessException | TransactionException ex) {
+            // Lost a concurrent rotation at the database level: same handling as reuse.
+            refreshTokens.findByTokenHash(hash).ifPresent(token -> revokeForReuse(token.getSessionId()));
+            log.info("auth.refresh outcome=reuse_revoked reason=concurrent error={}", ex.getClass().getSimpleName());
+            return Optional.empty();
+        }
+    }
+
+    private Optional<IssuedCredentials> refreshInTransaction(String hash) {
+        Instant now = clock.instant();
+        Optional<RefreshToken> found = refreshTokens.findByTokenHash(hash);
+        if (found.isEmpty()) {
+            log.info("auth.refresh outcome=invalid reason=unknown");
+            return Optional.empty();
+        }
+        RefreshToken token = found.get();
+        AuthSession session = sessions.findById(token.getSessionId()).orElse(null);
+        if (session == null || session.isRevoked()) {
+            log.info("auth.refresh outcome=invalid reason=revoked sessionId={}", token.getSessionId());
+            return Optional.empty();
+        }
+        if (token.isRotated()) {
+            sessions.revoke(session.getId(), now, RevokeReason.REUSE);
+            log.info("auth.refresh outcome=reuse_revoked sessionId={}", session.getId());
+            return Optional.empty();
+        }
+        if (!now.isBefore(token.getExpiresAt())) {
+            log.info("auth.refresh outcome=invalid reason=expired sessionId={}", session.getId());
+            return Optional.empty();
+        }
+        Optional<UserAccount> account = accounts.findById(session.getAccountId()).filter(UserAccount::isActive);
+        if (account.isEmpty()) {
+            sessions.revoke(session.getId(), now, RevokeReason.DISABLED);
+            log.info("auth.refresh outcome=invalid reason=inactive_account sessionId={}", session.getId());
+            return Optional.empty();
+        }
+        if (refreshTokens.markRotatedIfCurrent(token.getId(), now) != 1) {
+            sessions.revoke(session.getId(), now, RevokeReason.REUSE);
+            log.info("auth.refresh outcome=reuse_revoked reason=race sessionId={}", session.getId());
+            return Optional.empty();
+        }
+        log.info("auth.refresh outcome=success sessionId={}", session.getId());
+        return Optional.of(issuePair(session, account.get().getId(), account.get().getSessionVersion(), now));
+    }
+
+    private void revokeForReuse(String sessionId) {
+        tx.executeWithoutResult(status -> sessions.revoke(sessionId, clock.instant(), RevokeReason.REUSE));
     }
 
     IssuedCredentials issuePair(AuthSession session, long accountId, int sessionVersion, Instant now) {

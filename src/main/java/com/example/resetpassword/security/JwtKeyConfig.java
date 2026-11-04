@@ -22,6 +22,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -73,8 +77,13 @@ public class JwtKeyConfig {
                 .build();
         JwtTimestampValidator timestamp = new JwtTimestampValidator(Duration.ZERO);
         timestamp.setClock(clock);
+        // RFC 7519 §4.1.4: reject on or after exp. JwtTimestampValidator accepts the exact exp instant.
+        OAuth2TokenValidator<Jwt> strictExpiry = jwt -> jwt.getExpiresAt() != null
+                && clock.instant().isBefore(jwt.getExpiresAt())
+                ? OAuth2TokenValidatorResult.success()
+                : OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token"));
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                new JwtIssuerValidator(properties.jwt().issuer()), timestamp, sessionVersionValidator));
+                new JwtIssuerValidator(properties.jwt().issuer()), timestamp, strictExpiry, sessionVersionValidator));
         return decoder;
     }
 

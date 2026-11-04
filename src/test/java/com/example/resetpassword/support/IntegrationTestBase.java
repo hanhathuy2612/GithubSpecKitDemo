@@ -1,6 +1,7 @@
 package com.example.resetpassword.support;
 
 import com.example.resetpassword.ratelimit.RateLimiter;
+import com.example.resetpassword.ratelimit.SignInThrottle;
 import com.example.resetpassword.security.TokenGenerator;
 import java.time.Duration;
 import java.time.Instant;
@@ -59,7 +60,7 @@ public abstract class IntegrationTestBase {
     private ObjectProvider<RateLimiter> rateLimiters;
 
     @Autowired
-    private ObjectProvider<TestResettable> resettables;
+    private ObjectProvider<SignInThrottle> signInThrottles;
 
     @Autowired
     protected JwtEncoder jwtEncoder;
@@ -80,7 +81,7 @@ public abstract class IntegrationTestBase {
                 + " WHERE email IN (?, ?)", TestFixtures.SEED_HASH, TestFixtures.ALICE, TestFixtures.BOB);
         jdbc.update("UPDATE user_account SET password_hash = ?, status = 'DISABLED', session_version = 0"
                 + " WHERE email = ?", TestFixtures.SEED_HASH, TestFixtures.DISABLED);
-        resettables.forEach(TestResettable::reset);
+        signInThrottles.forEach(SignInThrottle::reset);
     }
 
     protected long accountId(String email) {

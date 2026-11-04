@@ -89,13 +89,13 @@ The same single project as 001:
 
 ### Tests (write first, must FAIL)
 
-- [ ] T014 [P] [US1] Unit tests for `SignInThrottle` in `test/unit/SignInThrottleTest.java` (`MutableClock`):
+- [X] T014 [P] [US1] Unit tests for `SignInThrottle` in `test/unit/SignInThrottleTest.java` (`MutableClock`):
   - after failure N, the next attempt for that email is blocked for `min(2^(N-1), 30)` seconds, so 1, 2, 4, 8, 16, 30, 30 s;
   - a success resets the email's counter;
   - unknown emails are tracked the same way;
   - the 21st failure from one IP within an hour blocks that IP;
   - IP successes are not counted.
-- [ ] T015 [P] [US1] Unit tests for `AuthSessionService` in `test/unit/AuthSessionServiceTest.java` (Mockito):
+- [X] T015 [P] [US1] Unit tests for `AuthSessionService` in `test/unit/AuthSessionServiceTest.java` (Mockito):
   - `startSession` stores only hashes, and refresh expires at the earlier of +7 d and +30 d;
   - a refresh rotates the token: the old one is marked rotated and the new one is issued;
   - a rotated token presented again revokes the session (`REUSE`) and returns invalid;
@@ -104,37 +104,37 @@ The same single project as 001:
   - refreshing on day 29 gives a token that expires at the 30-day cap; at the cap → invalid;
   - a revoked session → invalid;
   - a disabled account → invalid.
-- [ ] T016 [P] [US1] Unit tests for `SignInService` in `test/unit/SignInServiceTest.java`:
+- [X] T016 [P] [US1] Unit tests for `SignInService` in `test/unit/SignInServiceTest.java`:
   - success resets the throttle and starts a session;
   - a wrong password, an unknown email and a DISABLED account all return the same `FAILED` outcome;
   - an unknown email still calls `passwordEncoder.matches` exactly once, against the dummy hash (research R6);
   - a throttled attempt returns `FAILED` without calling `matches`.
-- [ ] T017 [P] [US1] API tests in `test/api/SignInApiTest.java`:
+- [X] T017 [P] [US1] API tests in `test/api/SignInApiTest.java`:
   - success → `200` with `tokenType` `Bearer`, `expiresIn` 900, a 43-char `refreshToken` and a JWT `accessToken` whose header has `alg` ES256 and `kid`, and whose claims are `sub`/`sid`/`sv`/`iss` with no email;
   - every failure cause → a byte-identical `401 /problems/invalid-credentials` ("Email or password is incorrect.");
   - a malformed body → `400 /problems/validation`;
   - after 21 failed sign-ins from one IP, even the correct password → the identical 401;
   - per-email backoff end to end (FR-003b): 2 wrong passwords for alice, then the correct password immediately → the identical 401; advance `MutableClock` 2 s → the correct password → 200;
   - a padded, mixed-case email (` Alice@Example.COM `) signs in as alice (FR-001).
-- [ ] T018 [P] [US1] API tests in `test/api/RefreshApiTest.java`:
+- [X] T018 [P] [US1] API tests in `test/api/RefreshApiTest.java`:
   - rotation: the old token → 401 and the new one → 200;
   - reuse of a rotated token → 401, and the session's newest token is also revoked;
   - two concurrent refreshes with the same token (`CountDownLatch`, two threads) → exactly one 200, after which the session is revoked;
   - 7 days idle → 401;
   - the 30-day cap → 401;
   - every failure → an identical `401 /problems/invalid-refresh-token`.
-- [ ] T019 [P] [US1] API tests in `test/api/MeApiTest.java`:
+- [X] T019 [P] [US1] API tests in `test/api/MeApiTest.java`:
   - a valid token → `200 {id, email}`;
   - all of these → an identical `401` with `WWW-Authenticate: Bearer`: no header; expired (the clock advanced 15 min); a tampered signature; a wrong issuer; `alg` none or HS256; a stale `sv` (bump `session_version` via JDBC); a disabled account.
 
 ### Implementation
 
-- [ ] T020 [P] [US1] Create `main/ratelimit/SignInThrottle.java` (research R7):
+- [X] T020 [P] [US1] Create `main/ratelimit/SignInThrottle.java` (research R7):
   - per-email state is a consecutive-failure count and a `nextAllowedAt` instant, held in a `ConcurrentHashMap`;
   - the per-IP failure cap uses `RateLimiter.isLimited` / `record` with key `signin-ip:<ip>`, 20 per hour;
   - methods: `boolean allowed(email, ip)`, `void failure(email, ip)`, `void success(email)` and `reset()`.
-- [ ] T021 [US1] Add `Optional<IssuedCredentials> refresh(String rawRefreshToken)` to `main/service/auth/AuthSessionService.java`, implementing research R4 in one `TransactionTemplate`. A malformed token (`TokenGenerator.isWellFormed`) → empty with no lookup. Logs `auth.refresh outcome=`
-- [ ] T022 [US1] Create `main/service/auth/SignInService.java` with `SignInOutcome signIn(rawEmail, password, clientIp)`, a sealed `Success(IssuedCredentials)` or `FAILED`:
+- [X] T021 [US1] Add `Optional<IssuedCredentials> refresh(String rawRefreshToken)` to `main/service/auth/AuthSessionService.java`, implementing research R4 in one `TransactionTemplate`. A malformed token (`TokenGenerator.isWellFormed`) → empty with no lookup. Logs `auth.refresh outcome=`
+- [X] T022 [US1] Create `main/service/auth/SignInService.java` with `SignInOutcome signIn(rawEmail, password, clientIp)`, a sealed `Success(IssuedCredentials)` or `FAILED`:
   1. Normalize the email.
   2. If the throttle does not allow the attempt → `FAILED`.
   3. Look up the account and run exactly one `matches`: against the real hash, or against a dummy BCrypt(12) hash computed at construction for an unknown email. Passwords over 72 bytes count as a mismatch without calling `matches`.
@@ -142,8 +142,8 @@ The same single project as 001:
   5. Record the result with the throttle.
 
   Logs `auth.sign_in outcome= reason=` with the account id only.
-- [ ] T023 [P] [US1] Create the DTOs in `main/web/api/dto/`: `SignInRequest(@NotBlank @Email @Size(max=254) email, @NotNull password)`, with the email stripped in a compact constructor and `toString` redacted; `RefreshRequest(@NotBlank refreshToken)`, redacted; `TokenResponse(accessToken, tokenType, expiresIn, refreshToken, refreshExpiresAt)`; and `MeResponse(id, email)`
-- [ ] T024 [US1] Create `main/web/api/AuthApiController.java` (`/api/auth`):
+- [X] T023 [P] [US1] Create the DTOs in `main/web/api/dto/`: `SignInRequest(@NotBlank @Email @Size(max=254) email, @NotNull password)`, with the email stripped in a compact constructor and `toString` redacted; `RefreshRequest(@NotBlank refreshToken)`, redacted; `TokenResponse(accessToken, tokenType, expiresIn, refreshToken, refreshExpiresAt)`; and `MeResponse(id, email)`
+- [X] T024 [US1] Create `main/web/api/AuthApiController.java` (`/api/auth`):
   - `POST /sign-in` → 200 `TokenResponse`, or 401 Problem `/problems/invalid-credentials`;
   - `POST /refresh` → 200, or 401 `/problems/invalid-refresh-token`;
   - `GET /me` (`@AuthenticationPrincipal Jwt`) → `MeResponse` via `AccountQueryService.findActive(sub)`. Create that one-method read service in `service/auth/`, so the controller makes no repository call (Constitution I).

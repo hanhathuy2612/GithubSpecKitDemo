@@ -8,6 +8,12 @@
 
 **Input**: User description: "Auth service: đăng ký tài khoản, đăng nhập, đăng xuất và đổi mật khẩu khi đang đăng nhập. Người dùng đăng ký bằng email và mật khẩu; đăng nhập bằng email/mật khẩu nhận access token ngắn hạn và refresh token dài hạn (JWT access + refresh token); dùng refresh token để lấy access token mới; đăng xuất thu hồi refresh token; đổi mật khẩu yêu cầu mật khẩu hiện tại. Dùng chung kho tài khoản và quy tắc mật khẩu của tính năng 001-reset-password (8–64 ký tự, ≤72 byte UTF-8); sau khi đặt lại mật khẩu (001) hoặc đổi mật khẩu thì các phiên khác bị thu hồi. Không được lộ việc email đã tồn tại hay chưa."
 
+## Clarifications
+
+### Session 2026-11-04
+
+- Q: Do sign-up, sign-in and change-password need HTML pages like 001, or only an API? → A: API only for 002; only the email-verification link opens a minimal server-rendered page (like the 001 reset page).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Sign in and stay signed in (Priority: P1) 🎯 MVP
@@ -129,6 +135,7 @@ This restores the session sign-out that 001 FR-013 deferred.
 - **FR-009**: Users MUST be able to register with an email, a password and a password confirmation. Password rules are those of 001 FR-011.
 - **FR-010**: The registration response MUST be identical whether or not the email already has an account. An existing owner receives an "attempted registration" notice instead of a verification link.
 - **FR-011**: A new account MUST stay unverified and unable to sign in until its verification link is used. The link is single-use, valid for 24 hours, and stored only as a one-way hash. A newer registration for the same unverified email invalidates older links and replaces the pending password.
+- **FR-011a**: The verification link MUST open a minimal server-rendered page that shows either "Your email is verified. You can now sign in." or "This link is invalid or has expired." All other capabilities of this feature are API-only.
 - **FR-012**: Registration requests MUST be rate limited exactly as 001 FR-014.
 
 **Sign out**
@@ -170,5 +177,5 @@ This restores the session sign-out that 001 FR-013 deferred.
 - There is no limit on how many devices an account can be signed in on at once.
 - Signing out of all devices is not a separate action in this version. It happens through password change or reset.
 - There are no roles or permissions beyond "signed in": every active account has the same access.
-- The existing 001 pages and email infrastructure are reused. Sign-in, sign-up and change-password are exposed as API endpoints. Web pages for them are out of scope unless planning decides otherwise.
+- The existing email infrastructure from 001 is reused. Sign-up, sign-in, refresh, sign-out, change-password and "who am I" are API-only; web pages for them are out of scope. The only new page is the minimal email-verification page opened from the link.
 - The 15-minute, 7-day and 24-hour lifetimes and the rate limits are reasonable defaults and may be revisited in `/speckit-clarify`.

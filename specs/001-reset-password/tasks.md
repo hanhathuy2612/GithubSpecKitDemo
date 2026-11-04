@@ -129,23 +129,23 @@ Single Gradle project at the repository root (plan.md › Project Structure):
 
 ### Tests for User Story 2 ⚠️ (write first, must FAIL)
 
-- [ ] T031 [P] [US2] Unit tests for `PasswordPolicy` in `src/test/java/com/example/resetpassword/unit/PasswordPolicyTest.java`:
+- [X] T031 [P] [US2] Unit tests for `PasswordPolicy` in `src/test/java/com/example/resetpassword/unit/PasswordPolicyTest.java`:
   - 7 chars → `TOO_SHORT`; 8 chars OK; 64 chars OK; 65 chars → `TOO_LONG`;
   - a 64-code-point password over 72 UTF-8 bytes → `TOO_LONG`;
   - no character-class rule (e.g. "aaaaaaaa" is OK);
   - confirmation differs → `MISMATCH`;
   - same as current hash → `SAME_AS_CURRENT`.
-- [ ] T032 [P] [US2] Unit tests for `PasswordResetService.checkToken/resetPassword` in `src/test/java/com/example/resetpassword/unit/PasswordResetServiceResetTest.java`:
+- [X] T032 [P] [US2] Unit tests for `PasswordResetService.checkToken/resetPassword` in `src/test/java/com/example/resetpassword/unit/PasswordResetServiceResetTest.java`:
   - success updates `password_hash` (BCrypt), sets `used_at`, and dispatches one changed-password email;
   - a policy failure returns the violation, does not consume the token, and leaves the password unchanged;
   - `checkToken` on a usable token returns `USABLE` and does not consume it.
-- [ ] T033 [P] [US2] Unit tests for `CredentialService.verifyCredentials` in `src/test/java/com/example/resetpassword/unit/CredentialServiceTest.java`: the correct password returns true; a wrong password, an unknown email or a DISABLED account returns false; the email is normalized (` Alice@Example.com `)
-- [ ] T034 [P] [US2] API tests for `POST /api/password-reset/confirm` in `src/test/java/com/example/resetpassword/api/ConfirmResetApiTest.java`:
+- [X] T033 [P] [US2] Unit tests for `CredentialService.verifyCredentials` in `src/test/java/com/example/resetpassword/unit/CredentialServiceTest.java`: the correct password returns true; a wrong password, an unknown email or a DISABLED account returns false; the email is normalized (` Alice@Example.com `)
+- [X] T034 [P] [US2] API tests for `POST /api/password-reset/confirm` in `src/test/java/com/example/resetpassword/api/ConfirmResetApiTest.java`:
   - valid → 200 `{"message":"Your password has been reset."}`;
   - afterwards `CredentialService.verifyCredentials` accepts the new password and rejects `demo-password-1`;
   - each rule failure → 400 `type /problems/validation` with the `code` (`TOO_SHORT`/`TOO_LONG`/`SAME_AS_CURRENT`/`MISMATCH`), and the token still works for a following valid request;
   - 1 changed-password email captured, containing no token.
-- [ ] T035 [P] [US2] Page tests for `GET/POST /reset-password` in `src/test/java/com/example/resetpassword/page/ResetPasswordPageTest.java`:
+- [X] T035 [P] [US2] Page tests for `GET/POST /reset-password` in `src/test/java/com/example/resetpassword/page/ResetPasswordPageTest.java`:
   - a GET with a usable token renders the form with a hidden `token` field and does not consume it (a following POST succeeds);
   - a POST with a valid password renders `reset-success`;
   - a rule failure re-renders the form with an inline error and the token kept;
@@ -153,8 +153,8 @@ Single Gradle project at the repository root (plan.md › Project Structure):
 
 ### Implementation for User Story 2
 
-- [ ] T036 [P] [US2] Create `PasswordPolicy` and the `PasswordViolation` enum (`TOO_SHORT`, `TOO_LONG`, `SAME_AS_CURRENT`, `MISMATCH`) in `src/main/java/com/example/resetpassword/service/PasswordPolicy.java`. Rules: "8–64 Unicode code points and ≤ 72 UTF-8 bytes; must not match the current password"; "confirmPassword must equal newPassword" (data-model.md)
-- [ ] T037 [US2] Add the following to `PasswordResetService` in `src/main/java/com/example/resetpassword/service/PasswordResetService.java`:
+- [X] T036 [P] [US2] Create `PasswordPolicy` and the `PasswordViolation` enum (`TOO_SHORT`, `TOO_LONG`, `SAME_AS_CURRENT`, `MISMATCH`) in `src/main/java/com/example/resetpassword/service/PasswordPolicy.java`. Rules: "8–64 Unicode code points and ≤ 72 UTF-8 bytes; must not match the current password"; "confirmPassword must equal newPassword" (data-model.md)
+- [X] T037 [US2] Add the following to `PasswordResetService` in `src/main/java/com/example/resetpassword/service/PasswordResetService.java`:
   - `TokenStatus checkToken(String rawToken)`: read-only; returns `USABLE` or `INVALID_OR_EXPIRED`.
   - `ResetOutcome resetPassword(String rawToken, String newPassword, String confirmPassword)`, `@Transactional`:
     1. Resolve the token by hash. Not found or not usable → `INVALID_OR_EXPIRED`.
@@ -162,11 +162,11 @@ Single Gradle project at the repository root (plan.md › Project Structure):
     3. `markUsedIfUsable(id, now)`. If 1 row was updated, set the BCrypt `password_hash` and `updated_at`, then register an `afterCommit` synchronization (same mechanism as in the US1 `requestReset` task) that dispatches the changed-password email. If 0 rows → `INVALID_OR_EXPIRED`.
 
   Define the result types in `service/ResetOutcome.java` and `service/TokenStatus.java`. Log `password_reset.completed` / `password_reset.rejected` with the account id and reason only.
-- [ ] T038 [P] [US2] Create `CredentialService` in `src/main/java/com/example/resetpassword/service/CredentialService.java` with `boolean verifyCredentials(String rawEmail, String password)`. It normalizes the email, finds an ACTIVE account, and returns `passwordEncoder.matches`. This is the spec's "credential check"; there is no HTTP endpoint (sign-in is out of scope)
-- [ ] T039 [P] [US2] Create DTO `ConfirmResetRequest` (`@NotBlank token`, `@NotNull newPassword`, `@NotNull confirmPassword`) in `src/main/java/com/example/resetpassword/web/api/dto/ConfirmResetRequest.java`
-- [ ] T040 [US2] Add `POST /api/password-reset/confirm` to `src/main/java/com/example/resetpassword/web/api/PasswordResetApiController.java`. It maps `ResetOutcome` as: success → 200 message; violations → 400 Problem `/problems/validation` with `errors[{field, code, message}]`; `INVALID_OR_EXPIRED` → 400 Problem `/problems/invalid-reset-token` with title "This link is invalid or has expired."
-- [ ] T041 [P] [US2] Create templates `src/main/resources/templates/reset-password.html` (new/confirm password fields, hidden `token`, inline error slot), `src/main/resources/templates/reset-success.html` ("Your password has been reset.") and `src/main/resources/templates/reset-invalid.html` ("This link is invalid or has expired." with a "Request a new link" anchor to `/forgot-password`)
-- [ ] T042 [US2] Add `GET /reset-password?token=` (`service.checkToken` → `reset-password` or `reset-invalid`) and `POST /reset-password` (→ `service.resetPassword` → `reset-success`, `reset-password` with error, or `reset-invalid`) to `src/main/java/com/example/resetpassword/web/page/PasswordResetPageController.java`. Set the `Referrer-Policy: no-referrer` and `Cache-Control: no-store` headers on both
+- [X] T038 [P] [US2] Create `CredentialService` in `src/main/java/com/example/resetpassword/service/CredentialService.java` with `boolean verifyCredentials(String rawEmail, String password)`. It normalizes the email, finds an ACTIVE account, and returns `passwordEncoder.matches`. This is the spec's "credential check"; there is no HTTP endpoint (sign-in is out of scope)
+- [X] T039 [P] [US2] Create DTO `ConfirmResetRequest` (`@NotBlank token`, `@NotNull newPassword`, `@NotNull confirmPassword`) in `src/main/java/com/example/resetpassword/web/api/dto/ConfirmResetRequest.java`
+- [X] T040 [US2] Add `POST /api/password-reset/confirm` to `src/main/java/com/example/resetpassword/web/api/PasswordResetApiController.java`. It maps `ResetOutcome` as: success → 200 message; violations → 400 Problem `/problems/validation` with `errors[{field, code, message}]`; `INVALID_OR_EXPIRED` → 400 Problem `/problems/invalid-reset-token` with title "This link is invalid or has expired."
+- [X] T041 [P] [US2] Create templates `src/main/resources/templates/reset-password.html` (new/confirm password fields, hidden `token`, inline error slot), `src/main/resources/templates/reset-success.html` ("Your password has been reset.") and `src/main/resources/templates/reset-invalid.html` ("This link is invalid or has expired." with a "Request a new link" anchor to `/forgot-password`)
+- [X] T042 [US2] Add `GET /reset-password?token=` (`service.checkToken` → `reset-password` or `reset-invalid`) and `POST /reset-password` (→ `service.resetPassword` → `reset-success`, `reset-password` with error, or `reset-invalid`) to `src/main/java/com/example/resetpassword/web/page/PasswordResetPageController.java`. Set the `Referrer-Policy: no-referrer` and `Cache-Control: no-store` headers on both
 
 **Checkpoint**: T031–T035 pass. US1 + US2 form the full happy path (quickstart steps 1–4).
 

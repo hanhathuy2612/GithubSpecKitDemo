@@ -10,6 +10,7 @@ import com.example.resetpassword.ratelimit.RateLimiter;
 import com.example.resetpassword.repository.PasswordResetTokenRepository;
 import com.example.resetpassword.repository.UserAccountRepository;
 import com.example.resetpassword.security.TokenGenerator;
+import com.example.resetpassword.service.PasswordPolicy;
 import com.example.resetpassword.service.PasswordResetService;
 import java.lang.reflect.Field;
 import java.util.Optional;
@@ -38,7 +39,8 @@ public class ServiceFixtures {
     }
 
     public PasswordResetService service() {
-        return new PasswordResetService(accounts, tokens, tokenGenerator, mail, clock, new NoOpTransactionManager());
+        return new PasswordResetService(accounts, tokens, tokenGenerator, mail, clock,
+                new PasswordPolicy(passwordEncoder), passwordEncoder, new NoOpTransactionManager());
     }
 
     public UserAccount account(long id, String email, boolean active) {

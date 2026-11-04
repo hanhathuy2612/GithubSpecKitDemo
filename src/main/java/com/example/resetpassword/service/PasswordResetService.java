@@ -9,11 +9,15 @@ import com.example.resetpassword.security.TokenGenerator;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -32,16 +36,20 @@ public class PasswordResetService {
     private final TokenGenerator tokenGenerator;
     private final ResetMailDispatcher mail;
     private final Clock clock;
+    private final PasswordPolicy passwordPolicy;
+    private final PasswordEncoder passwordEncoder;
     private final TransactionTemplate tx;
 
     public PasswordResetService(UserAccountRepository accounts, PasswordResetTokenRepository tokens,
-            TokenGenerator tokenGenerator, ResetMailDispatcher mail, Clock clock,
-            PlatformTransactionManager transactionManager) {
+            TokenGenerator tokenGenerator, ResetMailDispatcher mail, Clock clock, PasswordPolicy passwordPolicy,
+            PasswordEncoder passwordEncoder, PlatformTransactionManager transactionManager) {
         this.accounts = accounts;
         this.tokens = tokens;
         this.tokenGenerator = tokenGenerator;
         this.mail = mail;
         this.clock = clock;
+        this.passwordPolicy = passwordPolicy;
+        this.passwordEncoder = passwordEncoder;
         this.tx = new TransactionTemplate(transactionManager);
     }
 
@@ -69,5 +77,93 @@ public class PasswordResetService {
             AfterCommit.run(() -> mail.sendResetLink(owner.getId(), owner.getEmail(), rawToken));
         });
         return RequestOutcome.ACCEPTED;
+    }
+
+    /** Read-only: opening the link never consumes it (research R11, email link scanners). */
+    public TokenStatus checkToken(String rawToken) {
+        return resolveUsable(rawToken).isPresent() ? TokenStatus.USABLE : TokenStatus.INVALID_OR_EXPIRED;
+    }
+
+    /**
+     * Sets a new password. Token checks run before password rules; password-rule failures do not consume the token;
+     * the password update and marking the token used happen atomically (FR-013, research R8).
+     */
+    public ResetOutcome resetPassword(String rawToken, String newPassword, String confirmPassword) {
+        Optional<Resolved> resolved = resolveUsable(rawToken);
+        if (resolved.isEmpty()) {
+            return ResetOutcome.INVALID_OR_EXPIRED;
+        }
+        PasswordResetToken token = resolved.get().token();
+        UserAccount account = resolved.get().account();
+
+        List<PasswordViolation> violations =
+                passwordPolicy.check(newPassword, confirmPassword, account.getPasswordHash());
+        if (!violations.isEmpty()) {
+            log.info("password_reset.rejected reason=password_policy accountId={} violations={}",
+                    account.getId(), violations);
+            return new ResetOutcome.Rejected(violations);
+        }
+        // Hash before the write transaction so the row lock is held only briefly.
+        String newHash = passwordEncoder.encode(newPassword);
+
+        try {
+            Boolean consumed = tx.execute(status -> {
+                Instant now = clock.instant();
+                if (tokens.markUsedIfUsable(token.getId(), now) != 1) {
+                    status.setRollbackOnly();
+                    return false;
+                }
+                accounts.updatePasswordHash(account.getId(), newHash, now);
+                AfterCommit.run(() -> mail.sendPasswordChanged(account.getId(), account.getEmail(), now));
+                return true;
+            });
+            if (Boolean.TRUE.equals(consumed)) {
+                log.info("password_reset.completed accountId={}", account.getId());
+                return new ResetOutcome.Success();
+            }
+            log.info("password_reset.rejected reason=already_consumed accountId={}", account.getId());
+        } catch (DataAccessException | TransactionException ex) {
+            // A concurrent submit holding or having consumed the same token (research R8).
+            log.info("password_reset.rejected reason=concurrent_update accountId={} error={}",
+                    account.getId(), ex.getClass().getSimpleName());
+        }
+        return ResetOutcome.INVALID_OR_EXPIRED;
+    }
+
+    private record Resolved(PasswordResetToken token, UserAccount account) {
+    }
+
+    private Optional<Resolved> resolveUsable(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            log.info("password_reset.rejected reason=missing");
+            return Optional.empty();
+        }
+        Instant now = clock.instant();
+        Optional<PasswordResetToken> token = tokens.findByTokenHash(tokenGenerator.hash(rawToken));
+        if (token.isEmpty()) {
+            log.info("password_reset.rejected reason=unknown");
+            return Optional.empty();
+        }
+        if (!token.get().isUsable(now)) {
+            log.info("password_reset.rejected reason={} accountId={}", rejectionReason(token.get(), now),
+                    token.get().getAccountId());
+            return Optional.empty();
+        }
+        Optional<UserAccount> account = accounts.findById(token.get().getAccountId()).filter(UserAccount::isActive);
+        if (account.isEmpty()) {
+            log.info("password_reset.rejected reason=inactive_account accountId={}", token.get().getAccountId());
+            return Optional.empty();
+        }
+        return Optional.of(new Resolved(token.get(), account.get()));
+    }
+
+    private static String rejectionReason(PasswordResetToken token, Instant now) {
+        if (token.getUsedAt() != null) {
+            return "used";
+        }
+        if (token.getInvalidatedAt() != null) {
+            return "invalidated";
+        }
+        return "expired";
     }
 }

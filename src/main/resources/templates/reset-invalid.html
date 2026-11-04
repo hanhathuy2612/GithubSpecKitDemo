@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Link invalid</title>
+</head>
+<body>
+<main>
+    <h1>Link invalid</h1>
+    <p role="alert" th:text="${message}">This link is invalid or has expired.</p>
+    <p><a th:href="@{/forgot-password}">Request a new link</a></p>
+</main>
+</body>
+</html>

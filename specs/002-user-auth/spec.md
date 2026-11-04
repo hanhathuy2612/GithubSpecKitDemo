@@ -16,6 +16,7 @@
 - Q: Are already-issued access credentials invalidated immediately after sign-out, password change or reset, or do they stay valid until they expire? → A: Password change or reset invalidates every access credential of the account immediately (via a per-account session version checked on each request); signing out one device lets its access credential expire naturally (≤ 15 minutes).
 - Q: Is the 7-day refresh lifetime sliding (extended on each refresh) or absolute from sign-in? → A: Sliding 7 days of inactivity, capped at 30 days absolute from the original sign-in; after that the user must sign in again.
 - Q: How should sign-in respond when an unverified account uses the correct password? → A: Same generic "Email or password is incorrect" response, but the system silently re-sends the verification link (counted against the registration email rate limit).
+- Q: Should repeated failed sign-ins for one email lock out the real owner for 15 minutes? → A: No per-email lockout; use per-email exponential backoff between attempts (1, 2, 4… s, max 30 s) plus a cap of 20 failed sign-ins per IP per hour.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -111,7 +112,7 @@ This restores the session sign-out that 001 FR-013 deferred.
 - Two refreshes with the same refresh credential at the same moment: at most one succeeds. The other is treated as reuse (Story 1, scenario 5).
 - Registering the same new email twice before verifying: only the latest verification link works, and earlier links are invalidated.
 - An unverified registration that is never completed may be registered again with a new password. The latest registration wins.
-- Repeated failed sign-ins: at most 5 failed attempts per email per 15 minutes and 20 per IP per hour. Over the limit, the response is the same "Email or password is incorrect", even if the password is right.
+- Repeated failed sign-ins: no per-email lockout. After N consecutive failures for an email, the next attempt for that email is not evaluated until 2^(N-1) seconds have passed (1, 2, 4, 8, 16, then capped at 30 s); attempts inside that wait get the same generic failure without checking the password. A successful sign-in resets the counter. Unknown emails follow the same backoff, so behavior is identical. Separately, at most 20 failed sign-ins per IP per hour; over that, every sign-in from the IP gets the generic failure.
 - Repeated registrations: the same limits as 001 apply (3 per email per 15 minutes, 20 per IP per hour), with the same "check your email" response.
 - A disabled account is treated like a wrong password at sign-in, and its refresh credentials stop working.
 - Refreshing on day 29 of a session yields a refresh credential that still expires at the 30-day cap, not 7 days later; on or after the cap the refresh is rejected and the user must sign in again.
@@ -127,6 +128,7 @@ This restores the session sign-out that 001 FR-013 deferred.
 - **FR-002**: A successful sign-in MUST issue an access credential valid for 15 minutes and a refresh credential. Each refresh credential expires 7 days after it was issued (idle timeout), and no refresh credential of a sign-in may be valid later than 30 days after that sign-in (absolute cap); refreshing never extends past the cap.
 - **FR-003**: Every sign-in failure (unknown email, wrong password, disabled or unverified account, rate-limited) MUST produce one identical response, and the response time MUST NOT reveal which case occurred (SC-003).
 - **FR-003a**: When an UNVERIFIED account signs in with the correct password, the system MUST return the same generic failure as FR-003 and MUST send a new verification link (invalidating older ones), subject to the FR-012 rate limit. No verification email is sent for a wrong password.
+- **FR-003b**: Sign-in throttling MUST NOT lock an account out for a fixed period. Per normalized email (known or unknown alike), consecutive failures impose an exponential wait before the next evaluated attempt (1 s doubling up to 30 s), reset by a success; attempts during the wait return the FR-003 response without checking the password. Per client IP, at most 20 failed sign-ins per rolling hour.
 - **FR-004**: A protected "who am I" capability MUST return the signed-in account (id and email) for a valid access credential, and reject missing, expired, malformed or tampered credentials identically.
 
 **Refresh and revocation**

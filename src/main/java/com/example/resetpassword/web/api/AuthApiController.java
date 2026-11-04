@@ -1,7 +1,13 @@
 package com.example.resetpassword.web.api;
 
 import com.example.resetpassword.service.auth.AccountQueryService;
+import com.example.resetpassword.service.PasswordViolation;
 import com.example.resetpassword.service.auth.AuthSessionService;
+import com.example.resetpassword.service.auth.PasswordChangeOutcome;
+import com.example.resetpassword.service.auth.PasswordChangeService;
+import com.example.resetpassword.web.api.dto.ChangePasswordRequest;
+import java.util.List;
+import java.util.Map;
 import com.example.resetpassword.service.auth.RegistrationService;
 import com.example.resetpassword.web.ResetMessages;
 import com.example.resetpassword.web.api.dto.MessageResponse;
@@ -38,13 +44,40 @@ public class AuthApiController {
     private final AuthSessionService sessions;
     private final AccountQueryService accounts;
     private final RegistrationService registration;
+    private final PasswordChangeService passwordChange;
 
     public AuthApiController(SignInService signIn, AuthSessionService sessions, AccountQueryService accounts,
-            RegistrationService registration) {
+            RegistrationService registration, PasswordChangeService passwordChange) {
         this.signIn = signIn;
         this.sessions = sessions;
         this.accounts = accounts;
         this.registration = registration;
+        this.passwordChange = passwordChange;
+    }
+
+    static final URI TOO_MANY_ATTEMPTS = URI.create("/problems/too-many-attempts");
+
+    @PostMapping("/password")
+    public ResponseEntity<?> changePassword(@AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody ChangePasswordRequest body) {
+        PasswordChangeOutcome outcome = passwordChange.changePassword(Long.parseLong(jwt.getSubject()),
+                jwt.getClaimAsString("sid"), body.currentPassword(), body.newPassword(), body.confirmPassword());
+        return switch (outcome) {
+            case PasswordChangeOutcome.Changed changed -> ResponseEntity.ok(TokenResponse.from(changed.credentials()));
+            case PasswordChangeOutcome.Rejected rejected -> ResponseEntity.badRequest().body(
+                    ApiExceptionHandler.validationProblem(rejected.violations().stream().map(this::toError).toList()));
+            case PasswordChangeOutcome.WrongCurrentPassword wrong -> ResponseEntity.badRequest().body(
+                    ApiExceptionHandler.validationProblem(List.of(Map.of("field", "currentPassword",
+                            "code", "WRONG_CURRENT_PASSWORD", "message", "Current password is incorrect."))));
+            case PasswordChangeOutcome.TooManyAttempts tooMany ->
+                    problem(HttpStatus.TOO_MANY_REQUESTS, TOO_MANY_ATTEMPTS, "Too many attempts. Try again later.");
+            case PasswordChangeOutcome.InvalidSession invalid -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        };
+    }
+
+    private Map<String, String> toError(PasswordViolation violation) {
+        String field = violation == PasswordViolation.MISMATCH ? "confirmPassword" : "newPassword";
+        return Map.of("field", field, "code", violation.name(), "message", ResetMessages.message(violation));
     }
 
     @PostMapping("/register")
@@ -68,6 +101,12 @@ public class AuthApiController {
         return sessions.refresh(body.refreshToken())
                 .<ResponseEntity<?>>map(credentials -> ResponseEntity.ok(TokenResponse.from(credentials)))
                 .orElseGet(() -> problem(HttpStatus.UNAUTHORIZED, INVALID_REFRESH, "Refresh token is invalid."));
+    }
+
+    @PostMapping("/sign-out")
+    public ResponseEntity<Void> signOut(@RequestBody(required = false) RefreshRequest body) {
+        sessions.signOut(body == null ? null : body.refreshToken());
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/me")

@@ -127,6 +127,49 @@ public class AuthSessionService {
         return Optional.of(issuePair(session, account.get().getId(), account.get().getSessionVersion(), now));
     }
 
+    /**
+     * FR-013: revokes the session of the presented current refresh token. Unknown, malformed, rotated or already
+     * revoked tokens change nothing; the caller always gets the same result.
+     */
+    public void signOut(String rawRefreshToken) {
+        if (!tokenGenerator.isWellFormed(rawRefreshToken)) {
+            return;
+        }
+        String hash = tokenGenerator.hash(rawRefreshToken);
+        tx.executeWithoutResult(status -> refreshTokens.findByTokenHash(hash)
+                .filter(token -> !token.isRotated())
+                .ifPresent(token -> {
+                    if (sessions.revoke(token.getSessionId(), clock.instant(), RevokeReason.SIGN_OUT) == 1) {
+                        log.info("auth.sign_out sessionId={}", token.getSessionId());
+                    }
+                }));
+    }
+
+    /** FR-015: revokes every session of the account except the current one (caller's transaction). */
+    public void revokeOtherSessions(long accountId, String keepSessionId) {
+        tx.executeWithoutResult(status -> {
+            int revoked = sessions.revokeAllForAccountExcept(accountId, keepSessionId, clock.instant(),
+                    RevokeReason.PASSWORD_CHANGED);
+            log.info("auth.sessions_revoked reason={} count={} accountId={}", RevokeReason.PASSWORD_CHANGED,
+                    revoked, accountId);
+        });
+    }
+
+    /** Research R9: rotates the current session's refresh token and issues a pair with the new session version. */
+    public Optional<IssuedCredentials> reissueAfterPasswordChange(String sessionId, long accountId,
+            int newSessionVersion) {
+        return tx.execute(status -> {
+            Instant now = clock.instant();
+            Optional<AuthSession> session = sessions.findById(sessionId)
+                    .filter(s -> !s.isRevoked() && s.getAccountId() == accountId);
+            if (session.isEmpty() || !now.isBefore(session.get().getAbsoluteExpiresAt())) {
+                return Optional.<IssuedCredentials>empty();
+            }
+            refreshTokens.markSessionTokensRotated(sessionId, now);
+            return Optional.of(issuePair(session.get(), accountId, newSessionVersion, now));
+        });
+    }
+
     private void revokeForReuse(String sessionId) {
         tx.executeWithoutResult(status -> sessions.revoke(sessionId, clock.instant(), RevokeReason.REUSE));
     }

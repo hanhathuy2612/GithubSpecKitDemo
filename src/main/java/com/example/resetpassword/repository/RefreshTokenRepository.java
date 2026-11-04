@@ -16,4 +16,8 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update RefreshToken t set t.rotatedAt = :now where t.id = :id and t.rotatedAt is null")
     int markRotatedIfCurrent(@Param("id") Long id, @Param("now") Instant now);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update RefreshToken t set t.rotatedAt = :now where t.sessionId = :sessionId and t.rotatedAt is null")
+    int markSessionTokensRotated(@Param("sessionId") String sessionId, @Param("now") Instant now);
 }

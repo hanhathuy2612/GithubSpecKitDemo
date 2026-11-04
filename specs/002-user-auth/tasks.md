@@ -215,12 +215,12 @@ The same single project as 001:
 
 **Independent Test**: Sign in, sign out, then refresh with the old refresh token → 401.
 
-- [ ] T033 [P] [US3] API tests in `test/api/SignOutApiTest.java`:
+- [X] T033 [P] [US3] API tests in `test/api/SignOutApiTest.java`:
   - sign out → `204`, after which refreshing with that token → 401;
   - another session of the same account still refreshes;
   - an unknown, already revoked, rotated or malformed token → `204` with nothing changed;
   - the access token keeps working until it expires (the clock at +14 min → `/me` 200; at +15 min → 401).
-- [ ] T034 [US3] Add `signOut(rawRefreshToken)` to `AuthSessionService`: revoke the session with `SIGN_OUT` if the token resolves to a non-revoked session, and otherwise do nothing; always return. Add `POST /api/auth/sign-out` → 204 to `AuthApiController`
+- [X] T034 [US3] Add `signOut(rawRefreshToken)` to `AuthSessionService`: revoke the session with `SIGN_OUT` if the token resolves to a non-revoked session, and otherwise do nothing; always return. Add `POST /api/auth/sign-out` → 204 to `AuthApiController`
 
 ---
 
@@ -230,20 +230,20 @@ The same single project as 001:
 
 **Independent Test**: Sign in twice (A and B), change the password with A, then B refresh → 401, B `/me` → 401, the new A token → 200, and sign-in with the new password → 200.
 
-- [ ] T035 [P] [US4] Unit tests in `test/unit/PasswordChangeServiceTest.java`:
+- [X] T035 [P] [US4] Unit tests in `test/unit/PasswordChangeServiceTest.java`:
   - success updates the hash, bumps the version, revokes the other sessions (`PASSWORD_CHANGED`), keeps the current one, rotates its refresh token, issues an access token with the new `sv`, and sends a notification after commit;
   - a wrong current password → `WRONG_CURRENT_PASSWORD`, and a failure is recorded;
   - after 5 failures in 15 min → `TOO_MANY_ATTEMPTS` without calling `matches`;
   - 001 rule failures → violations and nothing changes.
-- [ ] T036 [P] [US4] API tests in `test/api/ChangePasswordApiTest.java`:
+- [X] T036 [P] [US4] API tests in `test/api/ChangePasswordApiTest.java`:
   - the full independent-test flow above;
   - the old access token on A → 401 (stale `sv`);
   - a wrong current password → `400 /problems/validation` with code `WRONG_CURRENT_PASSWORD`;
   - the 6th attempt within 15 min → `429 /problems/too-many-attempts`;
   - no token → 401;
   - a "Your password was changed" email is captured with no token in it.
-- [ ] T037 [US4] Create `main/service/auth/PasswordChangeService.java` implementing research R9. It uses the `sid`/`sub` claims passed in by the controller and the `RateLimiter` key `pwchange:<accountId>` (5 per 15 min via `isLimited`/`record`). Logs `auth.password_changed`
-- [ ] T038 [US4] Add DTO `ChangePasswordRequest` (redacted) and `POST /api/auth/password` (`@AuthenticationPrincipal Jwt`) → 200 `TokenResponse`, 400 or 429 Problem, to `AuthApiController`
+- [X] T037 [US4] Create `main/service/auth/PasswordChangeService.java` implementing research R9. It uses the `sid`/`sub` claims passed in by the controller and the `RateLimiter` key `pwchange:<accountId>` (5 per 15 min via `isLimited`/`record`). Logs `auth.password_changed`
+- [X] T038 [US4] Add DTO `ChangePasswordRequest` (redacted) and `POST /api/auth/password` (`@AuthenticationPrincipal Jwt`) → 200 `TokenResponse`, 400 or 429 Problem, to `AuthApiController`
 
 ---
 

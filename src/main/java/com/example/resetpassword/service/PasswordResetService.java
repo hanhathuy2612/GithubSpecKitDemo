@@ -3,6 +3,7 @@ package com.example.resetpassword.service;
 import com.example.resetpassword.domain.PasswordResetToken;
 import com.example.resetpassword.domain.UserAccount;
 import com.example.resetpassword.mail.ResetMailDispatcher;
+import com.example.resetpassword.ratelimit.RateLimiter;
 import com.example.resetpassword.repository.PasswordResetTokenRepository;
 import com.example.resetpassword.repository.UserAccountRepository;
 import com.example.resetpassword.security.TokenGenerator;
@@ -28,6 +29,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class PasswordResetService {
 
     public static final Duration TOKEN_TTL = Duration.ofMinutes(15);
+    public static final int EMAIL_LIMIT = 3;
+    public static final Duration EMAIL_WINDOW = Duration.ofMinutes(15);
+    public static final int IP_LIMIT = 20;
+    public static final Duration IP_WINDOW = Duration.ofHours(1);
 
     private static final Logger log = LoggerFactory.getLogger(PasswordResetService.class);
 
@@ -36,18 +41,20 @@ public class PasswordResetService {
     private final TokenGenerator tokenGenerator;
     private final ResetMailDispatcher mail;
     private final Clock clock;
+    private final RateLimiter rateLimiter;
     private final PasswordPolicy passwordPolicy;
     private final PasswordEncoder passwordEncoder;
     private final TransactionTemplate tx;
 
     public PasswordResetService(UserAccountRepository accounts, PasswordResetTokenRepository tokens,
-            TokenGenerator tokenGenerator, ResetMailDispatcher mail, Clock clock, PasswordPolicy passwordPolicy,
+            TokenGenerator tokenGenerator, ResetMailDispatcher mail, Clock clock, RateLimiter rateLimiter, PasswordPolicy passwordPolicy,
             PasswordEncoder passwordEncoder, PlatformTransactionManager transactionManager) {
         this.accounts = accounts;
         this.tokens = tokens;
         this.tokenGenerator = tokenGenerator;
         this.mail = mail;
         this.clock = clock;
+        this.rateLimiter = rateLimiter;
         this.passwordPolicy = passwordPolicy;
         this.passwordEncoder = passwordEncoder;
         this.tx = new TransactionTemplate(transactionManager);
@@ -62,6 +69,14 @@ public class PasswordResetService {
         // Same CPU work on every path (research R5): the token is generated and hashed before the lookup.
         String rawToken = tokenGenerator.generate();
         String tokenHash = tokenGenerator.hash(rawToken);
+
+        // FR-014: checked before the lookup so unknown emails consume slots too; both rules are always evaluated.
+        boolean emailAllowed = rateLimiter.tryAcquire("email:" + email, EMAIL_LIMIT, EMAIL_WINDOW);
+        boolean ipAllowed = rateLimiter.tryAcquire("ip:" + clientIp, IP_LIMIT, IP_WINDOW);
+        if (!emailAllowed || !ipAllowed) {
+            log.info("password_reset.requested outcome=rate_limited");
+            return RequestOutcome.ACCEPTED;
+        }
 
         tx.executeWithoutResult(status -> {
             Optional<UserAccount> account = accounts.findByEmail(email).filter(UserAccount::isActive);

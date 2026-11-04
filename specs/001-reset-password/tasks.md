@@ -180,23 +180,23 @@ Single Gradle project at the repository root (plan.md › Project Structure):
 
 ### Tests for User Story 3 ⚠️ (write first, must FAIL)
 
-- [ ] T043 [P] [US3] Unit tests for `InMemorySlidingWindowRateLimiter` in `src/test/java/com/example/resetpassword/unit/RateLimiterTest.java` using `MutableClock`:
+- [X] T043 [P] [US3] Unit tests for `InMemorySlidingWindowRateLimiter` in `src/test/java/com/example/resetpassword/unit/RateLimiterTest.java` using `MutableClock`:
   - 3 allowed then the 4th denied for `email:` within 15 min, and allowed again once the oldest entry leaves the window;
   - 20 allowed then the 21st denied for `ip:` within 60 min;
   - keys are independent;
   - concurrent `tryAcquire` from 10 threads never exceeds the limit.
-- [ ] T044 [P] [US3] API enumeration tests in `src/test/java/com/example/resetpassword/api/EnumerationApiTest.java`:
+- [X] T044 [P] [US3] API enumeration tests in `src/test/java/com/example/resetpassword/api/EnumerationApiTest.java`:
   - known vs unknown vs `disabled@example.com` → identical status, `Content-Type` and body bytes;
   - no email for the unknown or disabled address;
   - the 4th request for the same email within 15 min → identical 202 with no new email;
   - the 21st request from the same IP within 1 h (vary emails) → identical 202 with no email;
   - an unknown email also consumes rate-limit slots.
-- [ ] T045 [P] [US3] Timing test (SC-004) tagged `@Tag("timing")` in `src/test/java/com/example/resetpassword/api/EnumerationTimingTest.java`. After a warm-up, measure 50 requests each for known and unknown emails (resetting the rate limiter between runs) and assert that the medians differ by ≤ 50 ms
+- [X] T045 [P] [US3] Timing test (SC-004) tagged `@Tag("timing")` in `src/test/java/com/example/resetpassword/api/EnumerationTimingTest.java`. After a warm-up, measure 50 requests each for known and unknown emails (resetting the rate limiter between runs) and assert that the medians differ by ≤ 50 ms
 
 ### Implementation for User Story 3
 
-- [ ] T046 [P] [US3] Create the `RateLimiter` interface (`boolean tryAcquire(String key, int limit, Duration window)`) and `InMemorySlidingWindowRateLimiter` (`ConcurrentHashMap<String, Deque<Instant>>`, per-key synchronization, injected `Clock`, evicts stale timestamps on access, `reset()` for tests) in `src/main/java/com/example/resetpassword/ratelimit/`
-- [ ] T047 [US3] Integrate rate limiting into `PasswordResetService.requestReset` in `src/main/java/com/example/resetpassword/service/PasswordResetService.java`:
+- [X] T046 [P] [US3] Create the `RateLimiter` interface (`boolean tryAcquire(String key, int limit, Duration window)`) and `InMemorySlidingWindowRateLimiter` (`ConcurrentHashMap<String, Deque<Instant>>`, per-key synchronization, injected `Clock`, evicts stale timestamps on access, `reset()` for tests) in `src/main/java/com/example/resetpassword/ratelimit/`
+- [X] T047 [US3] Integrate rate limiting into `PasswordResetService.requestReset` in `src/main/java/com/example/resetpassword/service/PasswordResetService.java`:
   1. After normalization and before the account lookup, check `email:<normalized>` (3 per 15 min) and `ip:<clientIp>` (20 per 60 min). Both are always evaluated.
   2. If either is denied, issue no token and send no email, log the `rate_limited` outcome, and still return `ACCEPTED`.
   3. Keep the token generate+hash step on every path so the work stays symmetric (research R5).

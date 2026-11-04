@@ -39,7 +39,7 @@ public class ServiceFixtures {
     }
 
     public PasswordResetService service() {
-        return new PasswordResetService(accounts, tokens, tokenGenerator, mail, clock,
+        return new PasswordResetService(accounts, tokens, tokenGenerator, mail, clock, rateLimiter,
                 new PasswordPolicy(passwordEncoder), passwordEncoder, new NoOpTransactionManager());
     }
 

@@ -235,13 +235,13 @@ Single Gradle project at the repository root (plan.md › Project Structure):
 
 **Purpose**: Verify the logging and secrecy guarantees, documentation, and final validation
 
-- [ ] T054 [P] Log secrecy test in `src/test/java/com/example/resetpassword/api/LogSecrecyTest.java`. It captures logs (`OutputCaptureExtension`) across a full request → confirm → reuse flow and asserts that the output never contains the raw token, the new or old password, or the email address, and does contain the event names `password_reset.requested`, `password_reset.completed` and `password_reset.rejected` (FR-015, research R9)
-- [ ] T055 [P] Storage secrecy test in `src/test/java/com/example/resetpassword/api/TokenStorageTest.java`. After a request, every `password_reset_token.token_hash` matches `^[0-9a-f]{64}$` and no column contains the raw token captured from the email (SC-006)
-- [ ] T056 [P] Email failure test in `src/test/java/com/example/resetpassword/api/EmailFailureApiTest.java`. With a throwing `EmailSender`, `POST /api/password-reset/requests` for a known email still returns the identical 202, and `password_reset.email_failed` is logged with no email or token in the output
-- [ ] T057 [P] Email hand-off latency test (SC-005) in `src/test/java/com/example/resetpassword/api/EmailHandoffLatencyTest.java`. It extends `IntegrationTestBase` but overrides `mailExecutor` with the real bounded executor (via `@TestPropertySource` or a nested `@TestConfiguration`). It sends 20 reset requests for known accounts and records the time from the HTTP response to `FakeEmailSender` capture, then asserts p95 ≤ 5 s
-- [ ] T058 [P] Create `README.md` at the repository root: a project summary, a link to `specs/001-reset-password/quickstart.md`, the env var table, and the known limitations (in-memory rate limiting, forward headers)
-- [ ] T059 Run `./gradlew test` and `./gradlew test -PincludeTags=timing`, then run quickstart.md manual steps 1–7 against Mailpit and record the results in the PR description
-- [ ] T060 Constitution compliance review. Check that no controller in `src/main/java/com/example/resetpassword/web/` contains business branching or repository/mail calls (I–II); that every endpoint in contracts/ has tests (III); and that tokens and passwords are only hashed and never logged (IV)
+- [X] T054 [P] Log secrecy test in `src/test/java/com/example/resetpassword/api/LogSecrecyTest.java`. It captures logs (`OutputCaptureExtension`) across a full request → confirm → reuse flow and asserts that the output never contains the raw token, the new or old password, or the email address, and does contain the event names `password_reset.requested`, `password_reset.completed` and `password_reset.rejected` (FR-015, research R9)
+- [X] T055 [P] Storage secrecy test in `src/test/java/com/example/resetpassword/api/TokenStorageTest.java`. After a request, every `password_reset_token.token_hash` matches `^[0-9a-f]{64}$` and no column contains the raw token captured from the email (SC-006)
+- [X] T056 [P] Email failure test in `src/test/java/com/example/resetpassword/api/EmailFailureApiTest.java`. With a throwing `EmailSender`, `POST /api/password-reset/requests` for a known email still returns the identical 202, and `password_reset.email_failed` is logged with no email or token in the output
+- [X] T057 [P] Email hand-off latency test (SC-005) in `src/test/java/com/example/resetpassword/api/EmailHandoffLatencyTest.java`. It extends `IntegrationTestBase` but overrides `mailExecutor` with the real bounded executor (via `@TestPropertySource` or a nested `@TestConfiguration`). It sends 20 reset requests for known accounts and records the time from the HTTP response to `FakeEmailSender` capture, then asserts p95 ≤ 5 s
+- [X] T058 [P] Create `README.md` at the repository root: a project summary, a link to `specs/001-reset-password/quickstart.md`, the env var table, and the known limitations (in-memory rate limiting, forward headers)
+- [X] T059 Run `./gradlew test` and `./gradlew test -PincludeTags=timing`, then run quickstart.md manual steps 1–7 against Mailpit and record the results in the PR description
+- [X] T060 Constitution compliance review. Check that no controller in `src/main/java/com/example/resetpassword/web/` contains business branching or repository/mail calls (I–II); that every endpoint in contracts/ has tests (III); and that tokens and passwords are only hashed and never logged (IV)
 
 ---
 
@@ -329,3 +329,20 @@ Task: "T036 PasswordPolicy"       Task: "T038 CredentialService"   Task: "T039 C
 - The [USn] labels map tasks to the spec's user stories for traceability.
 - Commit after each task or logical group, and stop at any checkpoint to validate.
 - The tasks template marks tests as optional; they are mandatory here per Constitution III (see the constitution's Sync Impact Report).
+
+## Validation results (T059, T060), 2026-11-04
+
+- `./gradlew clean test`: 80 tests, 0 failures. `./gradlew test -PincludeTags=timing`: 1 test, 0 failures. Measured SC-004 medians: known 6.96 ms, unknown 3.22 ms. Measured SC-005 hand-off p95: 10 ms.
+- Quickstart manual steps 1–7 passed with `./gradlew bootRun`. Docker was not available in the implementation environment, so a minimal local SMTP sink on port 1025 stood in for Mailpit.
+  1. Generic message shown.
+  2. One "Reset your password" email received.
+  3. Unknown email: identical page, no email.
+  4. Link opened (`Referrer-Policy: no-referrer`, `Cache-Control: no-store`), password set, "Your password was changed" email received.
+  5. Reused link: "invalid or expired".
+  6. Four requests for bob: four identical pages, three emails.
+  7. No token, password or email in the application log; only `password_reset.*` events with account ids.
+- Constitution review (T060):
+  - I: controllers import no repository, mail, domain or security types; the only branching is request validation and outcome-to-view mapping.
+  - II: all rules live in `PasswordResetService`, `PasswordPolicy`, `CredentialService` and the rate limiter.
+  - III: every endpoint in contracts/ has MockMvc tests, and CI runs them.
+  - IV: tokens are stored only as SHA-256 hashes and passwords as BCrypt hashes; log secrecy and storage tests pass.

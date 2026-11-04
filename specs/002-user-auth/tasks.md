@@ -253,8 +253,8 @@ The same single project as 001:
 
 **Independent Test**: Sign in, complete a 001 reset for the same account, then refresh → 401 and `/me` → 401.
 
-- [ ] T039 [P] [US5] API test in `test/api/ResetRevokesSessionsTest.java`: two sessions for alice; seed a 001 reset token and `POST /api/password-reset/confirm` → 200; both refresh tokens → 401, both access tokens → 401, and sign-in with the new password → 200
-- [ ] T040 [US5] Inject `AuthSessionService` into `main/service/PasswordResetService.java`, and call `revokeAllForAccount(accountId, PASSWORD_RESET)` inside the existing `resetPassword` transaction, right after `updatePasswordHash`. Update `test/support/ServiceFixtures.java` with a mocked `AuthSessionService`, and add a verify to `test/unit/PasswordResetServiceResetTest.java`
+- [X] T039 [P] [US5] API test in `test/api/ResetRevokesSessionsTest.java`: two sessions for alice; seed a 001 reset token and `POST /api/password-reset/confirm` → 200; both refresh tokens → 401, both access tokens → 401, and sign-in with the new password → 200
+- [X] T040 [US5] Inject `AuthSessionService` into `main/service/PasswordResetService.java`, and call `revokeAllForAccount(accountId, PASSWORD_RESET)` inside the existing `resetPassword` transaction, right after `updatePasswordHash`. Update `test/support/ServiceFixtures.java` with a mocked `AuthSessionService`, and add a verify to `test/unit/PasswordResetServiceResetTest.java`
 
 ---
 

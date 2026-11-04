@@ -12,6 +12,7 @@ import com.example.resetpassword.repository.UserAccountRepository;
 import com.example.resetpassword.security.TokenGenerator;
 import com.example.resetpassword.service.PasswordPolicy;
 import com.example.resetpassword.service.PasswordResetService;
+import com.example.resetpassword.service.auth.AuthSessionService;
 import java.lang.reflect.Field;
 import java.util.Optional;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -28,6 +29,7 @@ public class ServiceFixtures {
     public final PasswordResetTokenRepository tokens = mock(PasswordResetTokenRepository.class);
     public final ResetMailDispatcher mail = mock(ResetMailDispatcher.class);
     public final RateLimiter rateLimiter = mock(RateLimiter.class);
+    public final AuthSessionService authSessions = mock(AuthSessionService.class);
     public final TokenGenerator tokenGenerator = new TokenGenerator();
     /** Low strength keeps unit tests fast; production uses 12. */
     public final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(4);
@@ -44,7 +46,7 @@ public class ServiceFixtures {
 
     public PasswordResetService service() {
         return new PasswordResetService(accounts, tokens, tokenGenerator, mail, clock, rateLimiter,
-                new PasswordPolicy(passwordEncoder), passwordEncoder, new NoOpTransactionManager());
+                new PasswordPolicy(passwordEncoder), passwordEncoder, authSessions, new NoOpTransactionManager());
     }
 
     public UserAccount account(long id, String email, boolean active) {

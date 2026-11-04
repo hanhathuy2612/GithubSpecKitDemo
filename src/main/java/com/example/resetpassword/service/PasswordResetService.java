@@ -1,12 +1,14 @@
 package com.example.resetpassword.service;
 
 import com.example.resetpassword.domain.PasswordResetToken;
+import com.example.resetpassword.domain.RevokeReason;
 import com.example.resetpassword.domain.UserAccount;
 import com.example.resetpassword.mail.ResetMailDispatcher;
 import com.example.resetpassword.ratelimit.RateLimiter;
 import com.example.resetpassword.repository.PasswordResetTokenRepository;
 import com.example.resetpassword.repository.UserAccountRepository;
 import com.example.resetpassword.security.TokenGenerator;
+import com.example.resetpassword.service.auth.AuthSessionService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -44,11 +46,13 @@ public class PasswordResetService {
     private final RateLimiter rateLimiter;
     private final PasswordPolicy passwordPolicy;
     private final PasswordEncoder passwordEncoder;
+    private final AuthSessionService authSessions;
     private final TransactionTemplate tx;
 
     public PasswordResetService(UserAccountRepository accounts, PasswordResetTokenRepository tokens,
             TokenGenerator tokenGenerator, ResetMailDispatcher mail, Clock clock, RateLimiter rateLimiter, PasswordPolicy passwordPolicy,
-            PasswordEncoder passwordEncoder, PlatformTransactionManager transactionManager) {
+            PasswordEncoder passwordEncoder, AuthSessionService authSessions,
+            PlatformTransactionManager transactionManager) {
         this.accounts = accounts;
         this.tokens = tokens;
         this.tokenGenerator = tokenGenerator;
@@ -57,6 +61,7 @@ public class PasswordResetService {
         this.rateLimiter = rateLimiter;
         this.passwordPolicy = passwordPolicy;
         this.passwordEncoder = passwordEncoder;
+        this.authSessions = authSessions;
         this.tx = new TransactionTemplate(transactionManager);
     }
 
@@ -129,6 +134,8 @@ public class PasswordResetService {
                     return false;
                 }
                 accounts.updatePasswordHash(account.getId(), newHash, now);
+                // 002 FR-017 (amends 001 FR-013): sign out everywhere, invalidate every access token.
+                authSessions.revokeAllForAccount(account.getId(), RevokeReason.PASSWORD_RESET);
                 AfterCommit.run(() -> mail.sendPasswordChanged(account.getId(), account.getEmail(), now));
                 return true;
             });

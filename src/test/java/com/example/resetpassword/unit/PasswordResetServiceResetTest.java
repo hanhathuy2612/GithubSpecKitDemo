@@ -50,6 +50,7 @@ class PasswordResetServiceResetTest {
         assertThat(hash.getValue()).startsWith("$2");
         assertThat(fx.passwordEncoder.matches("brand-new-pass", hash.getValue())).isTrue();
         verify(fx.mail).sendPasswordChanged(1L, TestFixtures.ALICE, TestFixtures.START);
+        verify(fx.authSessions).revokeAllForAccount(1L, com.example.resetpassword.domain.RevokeReason.PASSWORD_RESET);
     }
 
     @Test
@@ -60,6 +61,7 @@ class PasswordResetServiceResetTest {
         verify(fx.tokens, never()).markUsedIfUsable(anyLong(), any());
         verify(fx.accounts, never()).updatePasswordHash(anyLong(), anyString(), any());
         verify(fx.mail, never()).sendPasswordChanged(anyLong(), anyString(), any());
+        verify(fx.authSessions, never()).revokeAllForAccount(anyLong(), any());
     }
 
     @Test

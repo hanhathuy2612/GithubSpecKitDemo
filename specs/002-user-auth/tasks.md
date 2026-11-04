@@ -26,8 +26,8 @@ The same single project as 001:
 
 ## Phase 1: Setup
 
-- [ ] T001 Add `implementation("org.springframework.boot:spring-boot-starter-security-oauth2-resource-server")` to `build.gradle.kts` (artifact verified for Boot 4.0.9 in plan.md)
-- [ ] T002 Add JWT settings to `src/main/resources/application.yml`: `app.jwt.issuer: reset-password-demo`, `app.jwt.private-key: ${APP_JWT_PRIVATE_KEY:}`, `app.jwt.key-id: ${APP_JWT_KEY_ID:dev}`. Extend `main/config/AppProperties.java` with a nested `Jwt(String issuer, String privateKey, String keyId)` record
+- [X] T001 Add `implementation("org.springframework.boot:spring-boot-starter-security-oauth2-resource-server")` to `build.gradle.kts` (artifact verified for Boot 4.0.9 in plan.md)
+- [X] T002 Add JWT settings to `src/main/resources/application.yml`: `app.jwt.issuer: reset-password-demo`, `app.jwt.private-key: ${APP_JWT_PRIVATE_KEY:}`, `app.jwt.key-id: ${APP_JWT_KEY_ID:dev}`. Extend `main/config/AppProperties.java` with a nested `Jwt(String issuer, String privateKey, String keyId)` record
 
 ---
 
@@ -35,34 +35,34 @@ The same single project as 001:
 
 **⚠️ No story work starts until this phase is complete and the full 001 suite is still green.**
 
-- [ ] T003 Create `src/main/resources/db/migration/V3__auth.sql`:
+- [X] T003 Create `src/main/resources/db/migration/V3__auth.sql`:
   - alter `user_account`: add `session_version INT NOT NULL DEFAULT 0` (statuses stay `ACTIVE`/`DISABLED`);
   - table `registration_token`: `id` BIGINT identity PK, `email VARCHAR(254) NOT NULL` (normalized, indexed, **no** FK), `token_hash CHAR(64) NOT NULL UNIQUE`, `issued_at`/`expires_at` TIMESTAMP WITH TIME ZONE NOT NULL, `used_at`/`invalidated_at` nullable;
   - table `auth_session`: `id VARCHAR(36)` PK (random UUID), `account_id` FK (indexed), `created_at`/`absolute_expires_at` NOT NULL, `revoked_at` nullable, `revoke_reason VARCHAR(32)` nullable;
   - table `refresh_token`: `id` BIGINT identity PK, `session_id` FK → `auth_session.id` (indexed), `token_hash CHAR(64) NOT NULL UNIQUE`, `issued_at`/`expires_at` NOT NULL, `rotated_at` nullable.
-- [ ] T004 [P] Add `sessionVersion` (int) to `main/domain/UserAccount.java`, plus a public factory `UserAccount.active(normalizedEmail, passwordHash, now)` for completed registrations. Add `@Modifying` `bumpSessionVersion(id)` (`session_version = session_version + 1`) to `main/repository/UserAccountRepository.java`
-- [ ] T005 [P] Create the entities and repositories in `main/domain/` and `main/repository/`, per plan.md › Design Summary › Data:
+- [X] T004 [P] Add `sessionVersion` (int) to `main/domain/UserAccount.java`, plus a public factory `UserAccount.active(normalizedEmail, passwordHash, now)` for completed registrations. Add `@Modifying` `bumpSessionVersion(id)` (`session_version = session_version + 1`) to `main/repository/UserAccountRepository.java`
+- [X] T005 [P] Create the entities and repositories in `main/domain/` and `main/repository/`, per plan.md › Design Summary › Data:
   - `RegistrationToken` (fields per V3) with `isUsable(now)` (same rule as `PasswordResetToken`) and `RegistrationTokenRepository` (`findByTokenHash`, `@Modifying invalidateUnusedForEmail(email, now)`, `@Modifying markUsedIfUsable(id, now)`);
   - `AuthSession` with `isRevoked()` and `AuthSessionRepository`, with `@Modifying` `revoke(id, now, reason)` and `revokeAllForAccount(accountId, now, reason)` (`WHERE revoked_at IS NULL`) and `revokeAllForAccountExcept(accountId, keepSessionId, now, reason)`;
   - `RefreshToken` and `RefreshTokenRepository` with `findByTokenHash` and `@Modifying` `markRotatedIfCurrent(id, now)`, which runs `SET rotated_at = :now WHERE id = :id AND rotated_at IS NULL`.
-- [ ] T006 [P] Add `boolean isLimited(String key, int limit, Duration window)`, which counts without recording, and `void record(String key)` to `main/ratelimit/RateLimiter.java`, and implement both in `InMemorySlidingWindowRateLimiter.java`. Extend `test/unit/RateLimiterTest.java`: `isLimited` never records, `record` + `isLimited` reach the limit exactly, and windows expire with `MutableClock`
-- [ ] T007 [P] Create `main/security/JwtKeyConfig.java`:
-  - Parse `app.jwt.private-key` (PKCS#8 PEM, EC P-256) into an `ECKey` with `kid = app.jwt.key-id`.
+- [X] T006 [P] Add `boolean isLimited(String key, int limit, Duration window)`, which counts without recording, and `void record(String key)` to `main/ratelimit/RateLimiter.java`, and implement both in `InMemorySlidingWindowRateLimiter.java`. Extend `test/unit/RateLimiterTest.java`: `isLimited` never records, `record` + `isLimited` reach the limit exactly, and windows expire with `MutableClock`
+- [X] T007 [P] Create `main/security/JwtKeyConfig.java`:
+  - Parse `app.jwt.private-key` (PKCS#8 PEM, EC P-256) and `app.jwt.public-key` (X.509 PEM, added during implementation; see research R2) into an `ECKey` with `kid = app.jwt.key-id`.
   - If it is blank and the `prod` profile is not active, generate a P-256 key and log `auth.jwt_key_generated` at WARN. If it is blank with `prod`, throw at startup (research R2).
   - Expose a `JwtEncoder` (`NimbusJwtEncoder`) and a `JwtDecoder` (`NimbusJwtDecoder.withPublicKey(...).signatureAlgorithm(ES256)`).
-- [ ] T008 Create `main/security/AccessTokenIssuer.java` with `issue(long accountId, String sessionId, int sessionVersion)`. It returns a token plus `expiresIn = 900`, using the claims `iss`, `sub` (account id as a string), `sid`, `sv`, `iat` and `exp = iat + 15 min` from the injected `Clock`, plus a random `jti`, and header `alg = ES256` with `kid`. No email or other PII goes into the claims (plan.md › JWT)
-- [ ] T009 Create `main/security/SessionVersionValidator.java` (`OAuth2TokenValidator<Jwt>`). It loads the account by `sub` and fails unless the status is `ACTIVE` and `sv == session_version` (research R5). Set the decoder's validator explicitly to `new DelegatingOAuth2TokenValidator<>(new JwtIssuerValidator(issuer), timestamp, sessionVersionValidator)`, where `timestamp = new JwtTimestampValidator(Duration.ZERO)` with `setClock(clock)` using the injected `Clock`. **Do not** use `JwtValidators.createDefault…`: its timestamp check uses the system clock and would reject every token minted with the test `MutableClock` (research R1)
-- [ ] T010 Create `main/config/SecurityConfig.java` with a single `SecurityFilterChain` (research R1):
+- [X] T008 Create `main/security/AccessTokenIssuer.java` with `issue(long accountId, String sessionId, int sessionVersion)`. It returns a token plus `expiresIn = 900`, using the claims `iss`, `sub` (account id as a string), `sid`, `sv`, `iat` and `exp = iat + 15 min` from the injected `Clock`, plus a random `jti`, and header `alg = ES256` with `kid`. No email or other PII goes into the claims (plan.md › JWT)
+- [X] T009 Create `main/security/SessionVersionValidator.java` (`OAuth2TokenValidator<Jwt>`). It loads the account by `sub` and fails unless the status is `ACTIVE` and `sv == session_version` (research R5). Set the decoder's validator explicitly to `new DelegatingOAuth2TokenValidator<>(new JwtIssuerValidator(issuer), timestamp, sessionVersionValidator)`, where `timestamp = new JwtTimestampValidator(Duration.ZERO)` with `setClock(clock)` using the injected `Clock`. **Do not** use `JwtValidators.createDefault…`: its timestamp check uses the system clock and would reject every token minted with the test `MutableClock` (research R1)
+- [X] T010 Create `main/config/SecurityConfig.java` with a single `SecurityFilterChain` (research R1):
   - stateless, CSRF disabled, form login and HTTP basic disabled;
   - `permitAll` for `/error` (so error dispatches keep their 404/405/415 status), `/forgot-password`, `/reset-password`, `/api/password-reset/**`, `/api/auth/register`, `/api/auth/sign-in`, `/api/auth/refresh`, `/api/auth/sign-out` and `/complete-registration`;
   - `authenticated` for `/api/auth/me` and `/api/auth/password`, and `denyAll` for anything else;
   - `oauth2ResourceServer(jwt)` with the T007 decoder and the T009 validators;
   - an entry point that returns `401` with `WWW-Authenticate: Bearer` and Problem `type /problems/unauthenticated` (title "Authentication required."), identical for every cause.
-- [ ] T011 Create `main/service/auth/AuthSessionService.java` (shared core):
+- [X] T011 Create `main/service/auth/AuthSessionService.java` (shared core):
   - `IssuedCredentials startSession(UserAccount account)`: creates an `auth_session` (`absolute_expires_at = now + 30 d`) and a refresh token (`expires_at = min(now + 7 d, absolute_expires_at)`), stores only `TokenGenerator.hash(raw)`, and returns the raw refresh token plus the T008 access token.
   - `revokeAllForAccount(accountId, reason)`: revokes every active session and bumps `session_version` in the caller's transaction. Logs `auth.sessions_revoked reason= count= accountId=`.
   - Put the record `IssuedCredentials(String accessToken, long expiresIn, String refreshToken, Instant refreshExpiresAt)` in `service/auth/`.
-- [ ] T012 Extend `test/support/IntegrationTestBase.java`. Its `@BeforeEach` cleans up in this exact FK-safe order, replacing the existing single `DELETE FROM password_reset_token`:
+- [X] T012 Extend `test/support/IntegrationTestBase.java`. Its `@BeforeEach` cleans up in this exact FK-safe order, replacing the existing single `DELETE FROM password_reset_token`:
   1. `DELETE FROM refresh_token`
   2. `DELETE FROM auth_session`
   3. `DELETE FROM registration_token`
@@ -75,7 +75,7 @@ The same single project as 001:
   - `signIn(email, password)`, returning parsed `IssuedCredentials` from `POST /api/auth/sign-in`;
   - `bearer(token)`, a request post-processor;
   - `jwtWith(claims...)`, which mints a token with the context `JwtEncoder` for tampering tests.
-- [ ] T013 Regression checkpoint: run `./gradlew test`. All 80 tests from 001 must still pass with Spring Security on the classpath, in particular `ResetPasswordPageTest`'s `Cache-Control: no-store` and the 001 API responses. Add `test/api/SecurityRoutingTest.java`: `PUT /api/password-reset/requests` → `405` (not 401), and an unknown path → `401` (the denyAll rule). If a default security header overrides a 001 header, configure `headers()` in `SecurityConfig` rather than changing the 001 tests
+- [X] T013 Regression checkpoint: run `./gradlew test`. All 80 tests from 001 must still pass with Spring Security on the classpath, in particular `ResetPasswordPageTest`'s `Cache-Control: no-store` and the 001 API responses. Add `test/api/SecurityRoutingTest.java`: `PUT /api/password-reset/requests` → `405` (not 401), and an unknown path → `401` (the denyAll rule). If a default security header overrides a 001 header, configure `headers()` in `SecurityConfig` rather than changing the 001 tests
 
 **Checkpoint**: The app boots, V3 applies, and the 001 suite is green.
 

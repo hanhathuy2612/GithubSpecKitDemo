@@ -30,3 +30,8 @@ app:
   base-url: ${APP_BASE_URL:http://localhost:8080}
   mail-from: ${APP_MAIL_FROM:no-reply@example.com}
   mail-async: true
+  jwt:
+    issuer: reset-password-demo
+    private-key: ${APP_JWT_PRIVATE_KEY:}
+    public-key: ${APP_JWT_PUBLIC_KEY:}
+    key-id: ${APP_JWT_KEY_ID:dev}

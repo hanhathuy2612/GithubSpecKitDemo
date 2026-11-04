@@ -16,7 +16,7 @@ Decisions build on 001 (`specs/001-reset-password/research.md`). Format: Decisio
 
 ## R2. Signing algorithm and key
 
-- **Decision**: ES256 (ECDSA P-256) with a `kid` header. The private key comes from `APP_JWT_PRIVATE_KEY` (PKCS#8 PEM) and the key id from `APP_JWT_KEY_ID`. If the key is absent and the `prod` profile is not active, a key pair is generated at startup with a warning; with `prod`, startup fails.
+- **Decision**: ES256 (ECDSA P-256) with a `kid` header. The private key comes from `APP_JWT_PRIVATE_KEY` (PKCS#8 PEM), the matching public key from `APP_JWT_PUBLIC_KEY` (X.509 SPKI PEM), and the key id from `APP_JWT_KEY_ID`. *(Implementation note: the JDK cannot derive an EC public key from the private key without BouncyCastle, so both are configured.)* If the key is absent and the `prod` profile is not active, a key pair is generated at startup with a warning; with `prod`, startup fails.
 - **Rationale**: An asymmetric key lets other services verify tokens with only the public key, and is never shared. ES256 keys and signatures are small. A generated dev key only affects access tokens (≤ 15 min) on restart, because refresh tokens are opaque (R3).
 - **Alternatives**: HS256 (a shared secret, so any verifier could also mint tokens). RS256 (larger keys and signatures, otherwise equivalent). EdDSA (needs an extra dependency for Nimbus).
 - **Out of scope**: key rotation with multiple active keys. The `kid` is included so it can be added later.

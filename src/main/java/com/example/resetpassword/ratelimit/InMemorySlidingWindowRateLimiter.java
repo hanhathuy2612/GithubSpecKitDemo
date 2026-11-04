@@ -41,6 +41,27 @@ public class InMemorySlidingWindowRateLimiter implements RateLimiter {
     }
 
     @Override
+    public boolean isLimited(String key, int limit, Duration window) {
+        Deque<Instant> attempts = windows.get(key);
+        if (attempts == null) {
+            return false;
+        }
+        Instant windowStart = clock.instant().minus(window);
+        synchronized (attempts) {
+            long inWindow = attempts.stream().filter(t -> t.isAfter(windowStart)).count();
+            return inWindow >= limit;
+        }
+    }
+
+    @Override
+    public void record(String key) {
+        Deque<Instant> attempts = windows.computeIfAbsent(key, k -> new ArrayDeque<>());
+        synchronized (attempts) {
+            attempts.addLast(clock.instant());
+        }
+    }
+
+    @Override
     public void reset() {
         windows.clear();
     }

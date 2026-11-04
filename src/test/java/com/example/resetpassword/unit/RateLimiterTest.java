@@ -79,4 +79,23 @@ class RateLimiterTest {
         assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
         assertThat(allowed.get()).isEqualTo(20);
     }
+
+    @Test
+    void isLimitedNeverRecords() {
+        for (int i = 0; i < 10; i++) {
+            assertThat(limiter.isLimited("fail:x", 3, FIFTEEN_MIN)).isFalse();
+        }
+    }
+
+    @Test
+    void recordThenIsLimitedReachesLimitExactlyAndExpires() {
+        limiter.record("fail:x");
+        limiter.record("fail:x");
+        assertThat(limiter.isLimited("fail:x", 3, FIFTEEN_MIN)).isFalse();
+        limiter.record("fail:x");
+        assertThat(limiter.isLimited("fail:x", 3, FIFTEEN_MIN)).isTrue();
+
+        clock.advance(FIFTEEN_MIN);
+        assertThat(limiter.isLimited("fail:x", 3, FIFTEEN_MIN)).isFalse();
+    }
 }

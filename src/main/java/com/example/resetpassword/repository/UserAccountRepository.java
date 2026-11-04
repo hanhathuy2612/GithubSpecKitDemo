@@ -15,4 +15,8 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, Long> 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update UserAccount a set a.passwordHash = :hash, a.updatedAt = :now where a.id = :id")
     int updatePasswordHash(@Param("id") Long id, @Param("hash") String hash, @Param("now") Instant now);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update UserAccount a set a.sessionVersion = a.sessionVersion + 1 where a.id = :id")
+    int bumpSessionVersion(@Param("id") Long id);
 }

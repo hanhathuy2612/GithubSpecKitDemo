@@ -35,7 +35,27 @@ public class UserAccount {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /** Embedded in access tokens as {@code sv}; bumped on password change/reset (002 FR-015a). */
+    @Column(name = "session_version", nullable = false)
+    private int sessionVersion;
+
     protected UserAccount() {
+    }
+
+    /** A completed registration (002 FR-011a): accounts are created ACTIVE, never unverified. */
+    public static UserAccount active(String normalizedEmail, String passwordHash, Instant now) {
+        UserAccount account = new UserAccount();
+        account.email = normalizedEmail;
+        account.passwordHash = passwordHash;
+        account.status = AccountStatus.ACTIVE;
+        account.createdAt = now;
+        account.updatedAt = now;
+        account.sessionVersion = 0;
+        return account;
+    }
+
+    public int getSessionVersion() {
+        return sessionVersion;
     }
 
     public Long getId() {

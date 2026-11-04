@@ -14,6 +14,7 @@
 
 - Q: Do sign-up, sign-in and change-password need HTML pages like 001, or only an API? → A: API only for 002; only the email-verification link opens a minimal server-rendered page (like the 001 reset page).
 - Q: Are already-issued access credentials invalidated immediately after sign-out, password change or reset, or do they stay valid until they expire? → A: Password change or reset invalidates every access credential of the account immediately (via a per-account session version checked on each request); signing out one device lets its access credential expire naturally (≤ 15 minutes).
+- Q: Is the 7-day refresh lifetime sliding (extended on each refresh) or absolute from sign-in? → A: Sliding 7 days of inactivity, capped at 30 days absolute from the original sign-in; after that the user must sign in again.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -30,7 +31,7 @@ used to get a new access credential when the old one expires, without typing the
 
 **Acceptance Scenarios**:
 
-1. **Given** an active account, **When** the user signs in with the correct email and password, **Then** they receive an access credential valid for 15 minutes and a refresh credential valid for 7 days, and "who am I" returns their account.
+1. **Given** an active account, **When** the user signs in with the correct email and password, **Then** they receive an access credential valid for 15 minutes and a refresh credential that expires after 7 days without use and never later than 30 days after this sign-in, and "who am I" returns their account.
 2. **Given** a wrong password, an unknown email, a disabled account or an unverified account, **When** the user tries to sign in, **Then** they all get the same "Email or password is incorrect" response, and no credentials are issued.
 3. **Given** an expired access credential, **When** it is used, **Then** the request is rejected as unauthenticated.
 4. **Given** a valid refresh credential, **When** the user refreshes, **Then** they get a new access credential and a new refresh credential, and the old refresh credential stops working (rotation).
@@ -111,6 +112,7 @@ This restores the session sign-out that 001 FR-013 deferred.
 - Repeated failed sign-ins: at most 5 failed attempts per email per 15 minutes and 20 per IP per hour. Over the limit, the response is the same "Email or password is incorrect", even if the password is right.
 - Repeated registrations: the same limits as 001 apply (3 per email per 15 minutes, 20 per IP per hour), with the same "check your email" response.
 - A disabled account is treated like a wrong password at sign-in, and its refresh credentials stop working.
+- Refreshing on day 29 of a session yields a refresh credential that still expires at the 30-day cap, not 7 days later; on or after the cap the refresh is rejected and the user must sign in again.
 - A tampered, malformed or wrongly signed access credential is rejected as unauthenticated, the same as an expired one.
 
 ## Requirements *(mandatory)*
@@ -120,7 +122,7 @@ This restores the session sign-out that 001 FR-013 deferred.
 **Sign in and credentials**
 
 - **FR-001**: Users MUST be able to sign in with email and password. Email is normalized as in 001 FR-003.
-- **FR-002**: A successful sign-in MUST issue an access credential valid for 15 minutes and a refresh credential valid for 7 days.
+- **FR-002**: A successful sign-in MUST issue an access credential valid for 15 minutes and a refresh credential. Each refresh credential expires 7 days after it was issued (idle timeout), and no refresh credential of a sign-in may be valid later than 30 days after that sign-in (absolute cap); refreshing never extends past the cap.
 - **FR-003**: Every sign-in failure (unknown email, wrong password, disabled or unverified account, rate-limited) MUST produce one identical response, and the response time MUST NOT reveal which case occurred (SC-003).
 - **FR-004**: A protected "who am I" capability MUST return the signed-in account (id and email) for a valid access credential, and reject missing, expired, malformed or tampered credentials identically.
 
@@ -160,7 +162,7 @@ This restores the session sign-out that 001 FR-013 deferred.
 
 - **User Account** (from 001): gains a status `UNVERIFIED` in addition to `ACTIVE` and `DISABLED`, and a session version (FR-015a). Seeded accounts are `ACTIVE`.
 - **Email Verification**: one issued verification link for an unverified account. It holds a token hash, an expiry (24 hours) and a used or invalidated marker.
-- **Sign-in Session (refresh credential family)**: one successful sign-in on one device. It holds the account, the current refresh credential (hashed), expiry, revocation state, and the chain of rotated credentials used to detect reuse.
+- **Sign-in Session (refresh credential family)**: one successful sign-in on one device. It holds the account, the sign-in time (for the 30-day cap), the current refresh credential (hashed) with its 7-day expiry, revocation state, and the chain of rotated credentials used to detect reuse.
 
 ## Success Criteria *(mandatory)*
 
@@ -180,4 +182,4 @@ This restores the session sign-out that 001 FR-013 deferred.
 - Signing out of all devices is not a separate action in this version. It happens through password change or reset.
 - There are no roles or permissions beyond "signed in": every active account has the same access.
 - The existing email infrastructure from 001 is reused. Sign-up, sign-in, refresh, sign-out, change-password and "who am I" are API-only; web pages for them are out of scope. The only new page is the minimal email-verification page opened from the link.
-- The 15-minute, 7-day and 24-hour lifetimes and the rate limits are reasonable defaults and may be revisited in `/speckit-clarify`.
+- Lifetimes are fixed for this version: access 15 minutes, refresh 7 days idle / 30 days absolute, verification link 24 hours. Rate limits follow the defaults in Edge Cases.

@@ -15,6 +15,7 @@
 - Q: Do sign-up, sign-in and change-password need HTML pages like 001, or only an API? → A: API only for 002; only the email-verification link opens a minimal server-rendered page (like the 001 reset page).
 - Q: Are already-issued access credentials invalidated immediately after sign-out, password change or reset, or do they stay valid until they expire? → A: Password change or reset invalidates every access credential of the account immediately (via a per-account session version checked on each request); signing out one device lets its access credential expire naturally (≤ 15 minutes).
 - Q: Is the 7-day refresh lifetime sliding (extended on each refresh) or absolute from sign-in? → A: Sliding 7 days of inactivity, capped at 30 days absolute from the original sign-in; after that the user must sign in again.
+- Q: How should sign-in respond when an unverified account uses the correct password? → A: Same generic "Email or password is incorrect" response, but the system silently re-sends the verification link (counted against the registration email rate limit).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -55,7 +56,8 @@ disclosed (FR-005).
 1. **Given** an unused email, **When** the user registers with a password that meets the rules, **Then** they see "Check your email to finish creating your account", one verification email is sent, and the account cannot sign in until it is verified.
 2. **Given** an email that already has an account, **When** someone registers with it, **Then** they see exactly the same message as in scenario 1. No second account is created, and the existing owner gets an email saying "someone tried to create an account with your email; if it was you, sign in or reset your password".
 3. **Given** a verification link less than 24 hours old and not yet used, **When** it is opened, **Then** the account becomes active. A second use, an expired link and an unknown link all show "This link is invalid or has expired."
-4. **Given** a password that breaks the rules of 001 FR-011, or a confirmation that does not match, **When** the user registers, **Then** they see which rule failed and no email is sent.
+4. **Given** an unverified account, **When** its owner tries to sign in with the correct password, **Then** they get the generic "Email or password is incorrect" response and a fresh verification link is emailed; with a wrong password, nothing is sent.
+5. **Given** a password that breaks the rules of 001 FR-011, or a confirmation that does not match, **When** the user registers, **Then** they see which rule failed and no email is sent.
 
 ---
 
@@ -124,6 +126,7 @@ This restores the session sign-out that 001 FR-013 deferred.
 - **FR-001**: Users MUST be able to sign in with email and password. Email is normalized as in 001 FR-003.
 - **FR-002**: A successful sign-in MUST issue an access credential valid for 15 minutes and a refresh credential. Each refresh credential expires 7 days after it was issued (idle timeout), and no refresh credential of a sign-in may be valid later than 30 days after that sign-in (absolute cap); refreshing never extends past the cap.
 - **FR-003**: Every sign-in failure (unknown email, wrong password, disabled or unverified account, rate-limited) MUST produce one identical response, and the response time MUST NOT reveal which case occurred (SC-003).
+- **FR-003a**: When an UNVERIFIED account signs in with the correct password, the system MUST return the same generic failure as FR-003 and MUST send a new verification link (invalidating older ones), subject to the FR-012 rate limit. No verification email is sent for a wrong password.
 - **FR-004**: A protected "who am I" capability MUST return the signed-in account (id and email) for a valid access credential, and reject missing, expired, malformed or tampered credentials identically.
 
 **Refresh and revocation**

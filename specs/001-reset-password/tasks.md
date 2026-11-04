@@ -91,31 +91,31 @@ Single Gradle project at the repository root (plan.md › Project Structure):
 
 ### Tests for User Story 1 ⚠️ (write first, must FAIL)
 
-- [ ] T023 [P] [US1] Unit tests for `PasswordResetService.requestReset` in `src/test/java/com/example/resetpassword/unit/PasswordResetServiceRequestTest.java`:
+- [X] T023 [P] [US1] Unit tests for `PasswordResetService.requestReset` in `src/test/java/com/example/resetpassword/unit/PasswordResetServiceRequestTest.java`:
   - an ACTIVE account gets a token with `expires_at = issued_at + 15 min` and only its hash stored (never the raw token);
   - the email is normalized (` A@Example.com ` → `a@example.com`);
   - a second request sets `invalidated_at` on the first token (FR-008);
   - a DISABLED account and an unknown email issue no token and send no email;
   - the return value is the same `RequestOutcome.ACCEPTED` in all cases.
-- [ ] T024 [P] [US1] API tests for `POST /api/password-reset/requests` in `src/test/java/com/example/resetpassword/api/RequestResetApiTest.java` (extends `IntegrationTestBase`):
+- [X] T024 [P] [US1] API tests for `POST /api/password-reset/requests` in `src/test/java/com/example/resetpassword/api/RequestResetApiTest.java` (extends `IntegrationTestBase`):
   - known email → 202 with body `{"message":"If an account exists for this email, a password reset link has been sent."}` and 1 email captured whose link contains a 43-char token;
   - mixed-case or padded email → same account;
   - missing or invalid email → 400 `application/problem+json` with `type /problems/validation`, field `email`, and no email sent.
-- [ ] T025 [P] [US1] Page tests for `GET/POST /forgot-password` in `src/test/java/com/example/resetpassword/page/ForgotPasswordPageTest.java`: GET renders the form. A POST with a valid email renders the confirmation text "If an account exists for this email, a password reset link has been sent." and sends 1 email. An invalid email renders an inline field error and sends no email. Enumeration check: POSTs for `alice@example.com`, `nobody@example.com` and `disabled@example.com` return the same status and the same rendered message element (compare the extracted confirmation text and form markup, ignoring the echoed input value), and only the known email produces a captured message
+- [X] T025 [P] [US1] Page tests for `GET/POST /forgot-password` in `src/test/java/com/example/resetpassword/page/ForgotPasswordPageTest.java`: GET renders the form. A POST with a valid email renders the confirmation text "If an account exists for this email, a password reset link has been sent." and sends 1 email. An invalid email renders an inline field error and sends no email. Enumeration check: POSTs for `alice@example.com`, `nobody@example.com` and `disabled@example.com` return the same status and the same rendered message element (compare the extracted confirmation text and form markup, ignoring the echoed input value), and only the known email produces a captured message
 
 ### Implementation for User Story 1
 
-- [ ] T026 [US1] Create `PasswordResetService` in `src/main/java/com/example/resetpassword/service/PasswordResetService.java` with `RequestOutcome requestReset(String rawEmail, String clientIp)`, implemented as one `@Transactional` call:
+- [X] T026 [US1] Create `PasswordResetService` in `src/main/java/com/example/resetpassword/service/PasswordResetService.java` with `RequestOutcome requestReset(String rawEmail, String clientIp)`, implemented as one `@Transactional` call:
   1. Normalize the email (trim + `toLowerCase(Locale.ROOT)`).
   2. Always generate and hash a token.
   3. Look up the account; only if it is ACTIVE: invalidate its unused tokens, save the new `PasswordResetToken` (`issuedAt = clock.instant()`, `expiresAt = issuedAt + 15 min`), and register `TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() { afterCommit() → ResetMailDispatcher.sendResetLink(...) })`, so no email is sent if the transaction rolls back.
   4. Return `ACCEPTED`.
 
   Log `password_reset.requested` with the outcome and account id only. Leave the `clientIp` parameter unused for now; US3 adds rate limiting.
-- [ ] T027 [P] [US1] Create the request DTOs `RequestResetRequest` (`@NotBlank @Email @Size(max=254) email`) and `MessageResponse` (`message`) in `src/main/java/com/example/resetpassword/web/api/dto/`
-- [ ] T028 [US1] Create `PasswordResetApiController` in `src/main/java/com/example/resetpassword/web/api/PasswordResetApiController.java` with `POST /api/password-reset/requests`: `@Valid` body → `service.requestReset(email, request.getRemoteAddr())` → `202` with the fixed message. No other logic (Constitution I)
-- [ ] T029 [P] [US1] Create the Thymeleaf template `src/main/resources/templates/forgot-password.html`: an email form posting to `/forgot-password`, an inline error slot, and a confirmation message slot
-- [ ] T030 [US1] Create `PasswordResetPageController` in `src/main/java/com/example/resetpassword/web/page/PasswordResetPageController.java` with `GET /forgot-password` (render form) and `POST /forgot-password` (`@Valid` form object → `service.requestReset(email, request.getRemoteAddr())` → render the same template with the confirmation, or with the field error on validation failure). No other logic
+- [X] T027 [P] [US1] Create the request DTOs `RequestResetRequest` (`@NotBlank @Email @Size(max=254) email`) and `MessageResponse` (`message`) in `src/main/java/com/example/resetpassword/web/api/dto/`
+- [X] T028 [US1] Create `PasswordResetApiController` in `src/main/java/com/example/resetpassword/web/api/PasswordResetApiController.java` with `POST /api/password-reset/requests`: `@Valid` body → `service.requestReset(email, request.getRemoteAddr())` → `202` with the fixed message. No other logic (Constitution I)
+- [X] T029 [P] [US1] Create the Thymeleaf template `src/main/resources/templates/forgot-password.html`: an email form posting to `/forgot-password`, an inline error slot, and a confirmation message slot
+- [X] T030 [US1] Create `PasswordResetPageController` in `src/main/java/com/example/resetpassword/web/page/PasswordResetPageController.java` with `GET /forgot-password` (render form) and `POST /forgot-password` (`@Valid` form object → `service.requestReset(email, request.getRemoteAddr())` → render the same template with the confirmation, or with the field error on validation failure). No other logic
 
 **Checkpoint**: T023–T025 pass. US1 is demoable via the Mailpit quickstart steps 1–2.
 

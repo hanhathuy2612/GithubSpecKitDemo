@@ -123,7 +123,7 @@ a link after 15 minutes. Both must be rejected without changing the password.
 - **FR-010**: The system MUST NOT store the reset token in plain text; only a one-way hash of the token may be persisted (Constitution IV).
 - **FR-011**: Opening a valid link MUST let the user enter and confirm a new password. The new password MUST be 8–64 characters long and at most 72 bytes when UTF-8 encoded (both limits report the same "too long" error; no character-class requirements), MUST match its confirmation, and MUST differ from the current password; otherwise the system shows a validation error stating which rule failed.
 - **FR-012**: Invalid, expired, used, or unknown links MUST all produce the same "invalid or expired" message and offer a way to request a new link.
-- **FR-013**: On successful reset, the system MUST update the password and mark the link as used, as a single atomic operation.
+- **FR-013**: On successful reset, the system MUST update the password and mark the link as used, as a single atomic operation. *(Amended 2026-11-04 by 002 FR-017: the same operation also revokes all sign-in sessions of the account and increments its session version.)*
 - **FR-014**: The system MUST rate-limit reset requests to at most 3 per normalized email per rolling 15 minutes and at most 20 per client IP address per rolling hour. Requests over the limit MUST NOT issue a link or send an email, and MUST receive the same generic confirmation as any other request (no disclosure of throttling).
 - **FR-015**: Raw reset tokens and passwords MUST NOT appear in logs, error messages, or analytics.
 - **FR-016**: The system SHOULD notify the account's email after a successful password change, so the owner can react if it was not them.

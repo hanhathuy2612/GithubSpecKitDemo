@@ -5,7 +5,7 @@ description: "Task list for 002-user-auth (Sign Up, Sign In, Sign Out, Change Pa
 
 # Tasks: User Authentication – Sign Up, Sign In, Sign Out, Change Password
 
-**Input**: `specs/002-user-auth/spec.md`, `plan.md` (incl. Design Summary), `research.md` (R1–R11)
+**Input**: `specs/002-user-auth/spec.md`, `plan.md` (incl. Design Summary), `research.md` (R1–R11). Revised after `/speckit-analyze` (H1 → password-on-verification; U1–U3, G1, G2 fixed).
 
 **Tests**: REQUIRED (spec FR-019, Constitution III). Each story writes its tests first and checks that they FAIL before implementing. Lessons from 001 apply: every api/page test extends `IntegrationTestBase`; test doubles use `@Primary`; email is sent `afterCommit`.
 
@@ -36,17 +36,13 @@ The same single project as 001:
 **⚠️ No story work starts until this phase is complete and the full 001 suite is still green.**
 
 - [ ] T003 Create `src/main/resources/db/migration/V3__auth.sql`:
-  - alter `user_account`: replace check `ck_user_account_status` with `status IN ('ACTIVE','DISABLED','UNVERIFIED')`; add `session_version INT NOT NULL DEFAULT 0`;
-  - table `email_verification_token`: `id` BIGINT identity PK, `account_id` FK → `user_account.id` (indexed), `token_hash CHAR(64) NOT NULL UNIQUE`, `issued_at`/`expires_at` TIMESTAMP WITH TIME ZONE NOT NULL, `used_at`/`invalidated_at` nullable;
+  - alter `user_account`: add `session_version INT NOT NULL DEFAULT 0` (statuses stay `ACTIVE`/`DISABLED`);
+  - table `registration_token`: `id` BIGINT identity PK, `email VARCHAR(254) NOT NULL` (normalized, indexed, **no** FK), `token_hash CHAR(64) NOT NULL UNIQUE`, `issued_at`/`expires_at` TIMESTAMP WITH TIME ZONE NOT NULL, `used_at`/`invalidated_at` nullable;
   - table `auth_session`: `id VARCHAR(36)` PK (random UUID), `account_id` FK (indexed), `created_at`/`absolute_expires_at` NOT NULL, `revoked_at` nullable, `revoke_reason VARCHAR(32)` nullable;
   - table `refresh_token`: `id` BIGINT identity PK, `session_id` FK → `auth_session.id` (indexed), `token_hash CHAR(64) NOT NULL UNIQUE`, `issued_at`/`expires_at` NOT NULL, `rotated_at` nullable.
-- [ ] T004 [P] Add `UNVERIFIED` to `main/domain/AccountStatus.java`. Add `sessionVersion` (int) to `main/domain/UserAccount.java`. Add to `main/repository/UserAccountRepository.java`:
-  - `@Modifying` `bumpSessionVersion(id)`, which runs `session_version = session_version + 1`;
-  - `@Modifying` `activateIfUnverified(id, now)`, which returns the row count;
-  - `@Modifying` `updatePendingPassword(id, hash, now)`, which only applies when the status is UNVERIFIED;
-  - a public factory `UserAccount.unverified(email, hash, now)` for new registrations.
+- [ ] T004 [P] Add `sessionVersion` (int) to `main/domain/UserAccount.java`, plus a public factory `UserAccount.active(normalizedEmail, passwordHash, now)` for completed registrations. Add `@Modifying` `bumpSessionVersion(id)` (`session_version = session_version + 1`) to `main/repository/UserAccountRepository.java`
 - [ ] T005 [P] Create the entities and repositories in `main/domain/` and `main/repository/`, per plan.md › Design Summary › Data:
-  - `EmailVerificationToken` with `isUsable(now)` (same rule as `PasswordResetToken`) and `EmailVerificationTokenRepository` (`findByTokenHash`, `invalidateUnusedForAccount`, `markUsedIfUsable`);
+  - `RegistrationToken` (fields per V3) with `isUsable(now)` (same rule as `PasswordResetToken`) and `RegistrationTokenRepository` (`findByTokenHash`, `@Modifying invalidateUnusedForEmail(email, now)`, `@Modifying markUsedIfUsable(id, now)`);
   - `AuthSession` with `isRevoked()` and `AuthSessionRepository`, with `@Modifying` `revoke(id, now, reason)` and `revokeAllForAccount(accountId, now, reason)` (`WHERE revoked_at IS NULL`) and `revokeAllForAccountExcept(accountId, keepSessionId, now, reason)`;
   - `RefreshToken` and `RefreshTokenRepository` with `findByTokenHash` and `@Modifying` `markRotatedIfCurrent(id, now)`, which runs `SET rotated_at = :now WHERE id = :id AND rotated_at IS NULL`.
 - [ ] T006 [P] Add `boolean isLimited(String key, int limit, Duration window)`, which counts without recording, and `void record(String key)` to `main/ratelimit/RateLimiter.java`, and implement both in `InMemorySlidingWindowRateLimiter.java`. Extend `test/unit/RateLimiterTest.java`: `isLimited` never records, `record` + `isLimited` reach the limit exactly, and windows expire with `MutableClock`
@@ -55,10 +51,10 @@ The same single project as 001:
   - If it is blank and the `prod` profile is not active, generate a P-256 key and log `auth.jwt_key_generated` at WARN. If it is blank with `prod`, throw at startup (research R2).
   - Expose a `JwtEncoder` (`NimbusJwtEncoder`) and a `JwtDecoder` (`NimbusJwtDecoder.withPublicKey(...).signatureAlgorithm(ES256)`).
 - [ ] T008 Create `main/security/AccessTokenIssuer.java` with `issue(long accountId, String sessionId, int sessionVersion)`. It returns a token plus `expiresIn = 900`, using the claims `iss`, `sub` (account id as a string), `sid`, `sv`, `iat` and `exp = iat + 15 min` from the injected `Clock`, plus a random `jti`, and header `alg = ES256` with `kid`. No email or other PII goes into the claims (plan.md › JWT)
-- [ ] T009 Create `main/security/SessionVersionValidator.java` (`OAuth2TokenValidator<Jwt>`). It loads the account by `sub` and fails unless the status is `ACTIVE` and `sv == session_version` (research R5). Combine it with the issuer validator and a `JwtTimestampValidator` that uses the injected `Clock` and zero clock skew, so tests can drive expiry
+- [ ] T009 Create `main/security/SessionVersionValidator.java` (`OAuth2TokenValidator<Jwt>`). It loads the account by `sub` and fails unless the status is `ACTIVE` and `sv == session_version` (research R5). Set the decoder's validator explicitly to `new DelegatingOAuth2TokenValidator<>(new JwtIssuerValidator(issuer), timestamp, sessionVersionValidator)`, where `timestamp = new JwtTimestampValidator(Duration.ZERO)` with `setClock(clock)` using the injected `Clock`. **Do not** use `JwtValidators.createDefault…`: its timestamp check uses the system clock and would reject every token minted with the test `MutableClock` (research R1)
 - [ ] T010 Create `main/config/SecurityConfig.java` with a single `SecurityFilterChain` (research R1):
   - stateless, CSRF disabled, form login and HTTP basic disabled;
-  - `permitAll` for `/forgot-password`, `/reset-password`, `/api/password-reset/**`, `/api/auth/register`, `/api/auth/sign-in`, `/api/auth/refresh`, `/api/auth/sign-out` and `/verify-email`;
+  - `permitAll` for `/error` (so error dispatches keep their 404/405/415 status), `/forgot-password`, `/reset-password`, `/api/password-reset/**`, `/api/auth/register`, `/api/auth/sign-in`, `/api/auth/refresh`, `/api/auth/sign-out` and `/complete-registration`;
   - `authenticated` for `/api/auth/me` and `/api/auth/password`, and `denyAll` for anything else;
   - `oauth2ResourceServer(jwt)` with the T007 decoder and the T009 validators;
   - an entry point that returns `401` with `WWW-Authenticate: Bearer` and Problem `type /problems/unauthenticated` (title "Authentication required."), identical for every cause.
@@ -66,16 +62,20 @@ The same single project as 001:
   - `IssuedCredentials startSession(UserAccount account)`: creates an `auth_session` (`absolute_expires_at = now + 30 d`) and a refresh token (`expires_at = min(now + 7 d, absolute_expires_at)`), stores only `TokenGenerator.hash(raw)`, and returns the raw refresh token plus the T008 access token.
   - `revokeAllForAccount(accountId, reason)`: revokes every active session and bumps `session_version` in the caller's transaction. Logs `auth.sessions_revoked reason= count= accountId=`.
   - Put the record `IssuedCredentials(String accessToken, long expiresIn, String refreshToken, Instant refreshExpiresAt)` in `service/auth/`.
-- [ ] T012 Extend `test/support/IntegrationTestBase.java`. Its `@BeforeEach`:
-  1. Delete from `refresh_token`, `auth_session` and `email_verification_token`, and delete the non-seeded `user_account` rows. These deletes run before the existing resets.
-  2. Reset `session_version = 0` for the seeded accounts.
-  3. Reset every `SignInThrottle` bean via `ObjectProvider` (a no-op until US1).
+- [ ] T012 Extend `test/support/IntegrationTestBase.java`. Its `@BeforeEach` cleans up in this exact FK-safe order, replacing the existing single `DELETE FROM password_reset_token`:
+  1. `DELETE FROM refresh_token`
+  2. `DELETE FROM auth_session`
+  3. `DELETE FROM registration_token`
+  4. `DELETE FROM password_reset_token`
+  5. `DELETE FROM user_account WHERE email NOT IN (<3 seeded emails>)`
+  6. Reset the seeded accounts' hash and status (existing), plus `session_version = 0`.
+  7. Reset every `SignInThrottle` bean via `ObjectProvider` (a no-op until US1).
 
   Add these helpers:
   - `signIn(email, password)`, returning parsed `IssuedCredentials` from `POST /api/auth/sign-in`;
   - `bearer(token)`, a request post-processor;
   - `jwtWith(claims...)`, which mints a token with the context `JwtEncoder` for tampering tests.
-- [ ] T013 Regression checkpoint: run `./gradlew test`. All 80 tests from 001 must still pass with Spring Security on the classpath, in particular `ResetPasswordPageTest`'s `Cache-Control: no-store` and the 001 API responses. If a default security header overrides a 001 header, configure `headers()` in `SecurityConfig` rather than changing the 001 tests
+- [ ] T013 Regression checkpoint: run `./gradlew test`. All 80 tests from 001 must still pass with Spring Security on the classpath, in particular `ResetPasswordPageTest`'s `Cache-Control: no-store` and the 001 API responses. Add `test/api/SecurityRoutingTest.java`: `PUT /api/password-reset/requests` → `405` (not 401), and an unknown path → `401` (the denyAll rule). If a default security header overrides a 001 header, configure `headers()` in `SecurityConfig` rather than changing the 001 tests
 
 **Checkpoint**: The app boots, V3 applies, and the 001 suite is green.
 
@@ -106,14 +106,16 @@ The same single project as 001:
   - a disabled account → invalid.
 - [ ] T016 [P] [US1] Unit tests for `SignInService` in `test/unit/SignInServiceTest.java`:
   - success resets the throttle and starts a session;
-  - a wrong password, an unknown email, a DISABLED account and an UNVERIFIED account (wrong password) all return the same `FAILED` outcome;
+  - a wrong password, an unknown email and a DISABLED account all return the same `FAILED` outcome;
   - an unknown email still calls `passwordEncoder.matches` exactly once, against the dummy hash (research R6);
   - a throttled attempt returns `FAILED` without calling `matches`.
 - [ ] T017 [P] [US1] API tests in `test/api/SignInApiTest.java`:
   - success → `200` with `tokenType` `Bearer`, `expiresIn` 900, a 43-char `refreshToken` and a JWT `accessToken` whose header has `alg` ES256 and `kid`, and whose claims are `sub`/`sid`/`sv`/`iss` with no email;
   - every failure cause → a byte-identical `401 /problems/invalid-credentials` ("Email or password is incorrect.");
   - a malformed body → `400 /problems/validation`;
-  - after 21 failed sign-ins from one IP, even the correct password → the identical 401.
+  - after 21 failed sign-ins from one IP, even the correct password → the identical 401;
+  - per-email backoff end to end (FR-003b): 2 wrong passwords for alice, then the correct password immediately → the identical 401; advance `MutableClock` 2 s → the correct password → 200;
+  - a padded, mixed-case email (` Alice@Example.COM `) signs in as alice (FR-001).
 - [ ] T018 [P] [US1] API tests in `test/api/RefreshApiTest.java`:
   - rotation: the old token → 401 and the new one → 200;
   - reuse of a rotated token → 401, and the session's newest token is also revoked;
@@ -154,46 +156,54 @@ The same single project as 001:
 
 ## Phase 4: User Story 2 - Sign up with email verification (P1)
 
-**Goal**: Enumeration-safe registration, a 24-hour single-use verification link, a minimal verification page, and FR-003a resend on unverified sign-in.
+**Goal**: Register with the email only (enumeration-safe), get a 24-hour single-use link, and choose the password on the page it opens; the account is created only then (prevents pre-registration takeover, research R8).
 
-**Independent Test**: Register `carol@example.com`, extract the link from `FakeEmailSender`, open `/verify-email?token=…`, and sign in (200).
+**Independent Test**: `POST /api/auth/register {"email":"carol@example.com"}`, extract the link from `FakeEmailSender`, open `GET /complete-registration?token=…`, submit a password, then sign in → 200.
 
 ### Tests (write first, must FAIL)
 
 - [ ] T025 [P] [US2] Unit tests for `RegistrationService` in `test/unit/RegistrationServiceTest.java`:
-  - **new email**: an UNVERIFIED account and a hashed 24-hour link are created, and a verification email is sent;
-  - **email already UNVERIFIED**: the pending hash is replaced, old links are invalidated, and a new link is sent;
-  - **ACTIVE email**: no account change, and an "attempted registration" email is sent;
-  - **DISABLED email**: nothing is sent;
-  - every branch returns the same outcome and calls `passwordEncoder.encode` exactly once;
-  - password rule failures (001 `PasswordPolicy`) → violations, and no email is sent;
-  - `verifyEmail`: under 24 h → activated; exactly at 24 h, already used, invalidated, unknown or malformed → `INVALID`.
+  - **no account**: older unused links for the email are invalidated, a new hashed 24-hour link is stored, a registration-link email is sent, and **no account** is created;
+  - **ACTIVE email**: an "attempted registration" email with no link is sent and nothing is stored;
+  - **DISABLED email**: nothing is sent or stored;
+  - every branch returns the same outcome and never calls `passwordEncoder`;
+  - `checkLink` never consumes the link;
+  - `completeRegistration`: a valid link and password → ACTIVE account created and link used; 001 rule failures → violations, no account, link still usable; exactly at 24 h, used, invalidated, unknown or malformed → `INVALID`; the unique email constraint violation (a racing completion) → `INVALID`.
 - [ ] T026 [P] [US2] API tests in `test/api/RegisterApiTest.java`:
-  - new, unverified, active and disabled emails → a byte-identical `202 {"message":"Check your email to finish creating your account."}`;
-  - the email captured per case is: a verification link for new and unverified, a notice for active (subject "Someone tried to create an account with your email", with no verification link), and nothing for disabled;
-  - an invalid email or a password rule failure → `400 /problems/validation` with 001 codes, and no email;
+  - new, pending (a link already sent), active and disabled emails → a byte-identical `202 {"message":"Check your email to finish creating your account."}`;
+  - the email captured per case is: a registration link for new and pending, a notice for active (subject "Someone tried to create an account with your email", no `complete-registration` link), and nothing for disabled;
+  - an invalid email → `400 /problems/validation` and no email;
   - the 4th registration for one email within 15 min → the identical 202 with no email;
-  - an UNVERIFIED account signing in with the correct password → the identical 401, plus a new verification email (FR-003a); with a wrong password → no email.
-- [ ] T027 [P] [US2] Page tests in `test/page/VerifyEmailPageTest.java`:
-  - a valid link → "Your email is verified. You can now sign in.", the account is ACTIVE, and sign-in → 200;
-  - reused, expired (the clock advanced 24 h), invalidated, unknown, malformed and missing tokens → "This link is invalid or has expired.";
-  - every response has `Referrer-Policy: no-referrer`.
+  - no `user_account` row exists after registering until the link is completed.
+- [ ] T027 [P] [US2] Page tests in `test/page/CompleteRegistrationPageTest.java`:
+  - GET with a valid link → the form with the hidden token, and the link is not consumed (a following POST succeeds);
+  - POST with a valid password → "Your account is ready. You can now sign in.", the account is ACTIVE, and sign-in with that password → 200;
+  - POST with a rule failure → an inline error, the form is kept, and the link is still usable;
+  - reused, expired (the clock advanced 24 h), superseded by a newer registration, unknown, malformed and missing tokens → "This link is invalid or has expired." on GET and POST;
+  - two concurrent POSTs with two different valid links for the same email → exactly one account;
+  - **takeover regression**: register `victim@example.com`; the victim opens the link and chooses their own password; an attacker cannot have chosen it at registration (`POST /api/auth/register` with any `password` field still creates nothing usable). Sign-in works only with the victim's chosen password;
+  - every response has `Referrer-Policy: no-referrer` and `Cache-Control: no-store`.
 
 ### Implementation
 
-- [ ] T028 [P] [US2] Add `verification(rawToken)`, which builds a link to `${app.base-url}/verify-email?token=…` with the text "expires in 24 hours", and `attemptedRegistration()`, which offers only sign-in and `/forgot-password` with no token, to a new `main/mail/AuthEmailComposer.java`. Add `@Async("mailExecutor")` `sendVerification(accountId, email, rawToken)` and `sendAttemptedRegistration(accountId, email)` to `main/mail/ResetMailDispatcher.java`, using the same failure logging
-- [ ] T029 [US2] Create `main/service/auth/RegistrationService.java`, implementing research R6 branches and FR-011/FR-012:
-  - `register(rawEmail, password, confirm, clientIp)`:
-    1. Always run `encode` first.
-    2. Validate with the 001 `PasswordPolicy` (the current hash is null).
-    3. Apply the 001 `RateLimiter` keys `register-email:` and `register-ip:` (3 per 15 min, 20 per hour).
-    4. Branch on the account's state.
-    5. Send email via `AfterCommit`.
-  - `verifyEmail(rawToken)`, returning `VERIFIED` or `INVALID`: one transaction with a conditional `markUsedIfUsable` plus `activateIfUnverified`.
-  - `resendVerification(UserAccount)`, used by FR-003a and subject to the same email limit.
-- [ ] T030 [US2] Make `AfterCommit` public in `main/service/AfterCommit.java`, so `service/auth` can use it. Then call `RegistrationService.resendVerification` from `SignInService` when the account is UNVERIFIED and the password matches; the outcome stays `FAILED` (FR-003a)
-- [ ] T031 [P] [US2] Add DTO `RegisterRequest(email, password, confirmPassword)` (email stripped, redacted) and `POST /api/auth/register` → 202 to `AuthApiController`, mapping violations exactly like 001 `/confirm`
-- [ ] T032 [P] [US2] Create `main/web/page/VerifyEmailPageController.java` (`GET /verify-email`, an optional `token` param, the no-referrer and no-store headers) and `src/main/resources/templates/verify-email-result.html`, which shows the message and, on success, a "Sign in" hint
+- [ ] T028 [P] [US2] Create `main/mail/AuthEmailComposer.java` with `registrationLink(rawToken)` (a link to `${app.base-url}/complete-registration?token=…`, the text "expires in 24 hours", and "If you did not ask to create an account, ignore this email.") and `attemptedRegistration()` (offers only sign-in and `/forgot-password`, with no token). Add `@Async("mailExecutor")` `sendRegistrationLink(email, rawToken)` and `sendAttemptedRegistration(accountId, email)` to `main/mail/ResetMailDispatcher.java`, using the same failure logging (no email in logs)
+- [ ] T029 [US2] Create `main/service/auth/RegistrationService.java` (research R6, R8):
+  - `register(rawEmail, clientIp)`:
+    1. Normalize the email, and always generate and hash a token.
+    2. Apply the 001 `RateLimiter` keys `register-email:` and `register-ip:` (3 per 15 min, 20 per hour); over the limit → same outcome.
+    3. Branch on the account: none → `invalidateUnusedForEmail` + save the token + `AfterCommit` send link; ACTIVE → `AfterCommit` send notice; DISABLED → nothing.
+    4. Log `auth.registered outcome=`.
+  - `checkLink(rawToken)`, read-only, returns `USABLE` or `INVALID` (malformed → INVALID without a lookup).
+  - `completeRegistration(rawToken, password, confirm)`, returning a sealed `Completed`, `Rejected(violations)` or `INVALID`:
+    1. Resolve the usable token.
+    2. Run 001 `PasswordPolicy.check(password, confirm, null)`.
+    3. Encode the password.
+    4. In one `TransactionTemplate`: `markUsedIfUsable == 1`, then save `UserAccount.active(email, hash, now)`.
+    5. A `DataIntegrityViolationException` or 0 rows → `INVALID`.
+    6. Log `auth.registration_completed accountId=`.
+- [ ] T030 [US2] Make `AfterCommit` public in `main/service/AfterCommit.java`, so `service/auth` can use it
+- [ ] T031 [P] [US2] Add DTO `RegisterRequest(@NotBlank @Email @Size(max=254) email)` (email stripped; unknown JSON fields such as `password` are ignored) and `POST /api/auth/register` → 202 to `AuthApiController`
+- [ ] T032 [P] [US2] Create `main/web/page/CompleteRegistrationPageController.java`, with `GET` and `POST /complete-registration`, an optional `token`, and the no-referrer and no-store headers. It maps outcomes to the templates `src/main/resources/templates/complete-registration.html` (form with hidden token and inline errors), `registration-complete.html` and `registration-invalid.html` (message plus a link to register again). Map messages like the 001 `PasswordResetPageController`
 
 **Checkpoint**: T025–T027 pass, and US1 still passes.
 
@@ -252,17 +262,17 @@ The same single project as 001:
 
 - [ ] T041 [P] SC-003 timing test `test/api/AuthEnumerationTimingTest.java`, tagged `@Tag("timing")`. After a warm-up, take the median of 30 samples for each pair and assert a difference of ≤ 50 ms:
   - sign-in with an unknown email vs. a wrong password;
-  - registration with a new vs. an existing email.
+  - registration with a new vs. an existing (ACTIVE) email.
 
   Reset `SignInThrottle` and `RateLimiter` before each sample.
-- [ ] T042 [P] Secrecy test `test/api/AuthSecrecyTest.java`. Use `OutputCaptureExtension` across register → verify → sign-in → refresh → change password → sign-out, and check:
-  - logs contain no access token, refresh token, verification token, password or email, but do contain the `auth.*` event names;
-  - every `refresh_token.token_hash` and `email_verification_token.token_hash` matches `^[0-9a-f]{64}$`, and no column contains a captured raw token.
+- [ ] T042 [P] Secrecy test `test/api/AuthSecrecyTest.java`. Use `OutputCaptureExtension` across register → complete registration → sign-in → refresh → change password → sign-out, and check:
+  - logs contain no access token, refresh token, registration token, password or email, but do contain the `auth.*` event names;
+  - every `refresh_token.token_hash` and `registration_token.token_hash` matches `^[0-9a-f]{64}$`, and no column contains a captured raw token.
 - [ ] T043 [P] Update living docs:
   - `README.md`: the 002 row in the Documents table, the endpoints, `APP_JWT_PRIVATE_KEY`/`APP_JWT_KEY_ID` in the env table (with how to generate a P-256 PKCS#8 key using `openssl`), and the manual check steps for 002;
   - the `specs/001-reset-password/plan.md` Design Summary: note that reset now also revokes sessions (002 FR-017).
-- [ ] T044 Run `./gradlew clean test` and `./gradlew test -PincludeTags=timing`. Then run the manual check with `bootRun` and `curl`: register, verify via the captured mail, sign in, `/me`, refresh, change password, the old token → 401, sign-out. Append the results to this file
-- [ ] T045 Constitution review: controllers in `web/` import no repository, mail or security internals beyond `Jwt`; every endpoint in plan.md › Interfaces has tests; refresh and verification tokens are hashed only; secrets come from env. Mark `tasks.md` frozen and set the spec Status to `Implemented`
+- [ ] T044 Run `./gradlew clean test` and `./gradlew test -PincludeTags=timing`. Then run the manual check with `bootRun` and `curl`: register, complete registration via the link in the captured mail, sign in, `/me`, refresh, change password, the old token → 401, sign-out. Append the results to this file
+- [ ] T045 Constitution review: controllers in `web/` import no repository, mail or security internals beyond `Jwt`; every endpoint in plan.md › Interfaces has tests; refresh and registration tokens are hashed only; secrets come from env. Mark `tasks.md` frozen and set the spec Status to `Implemented`
 
 ---
 

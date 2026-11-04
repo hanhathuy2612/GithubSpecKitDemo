@@ -7,9 +7,10 @@ Decisions build on 001 (`specs/001-reset-password/research.md`). Format: Decisio
 - **Decision**: Add Spring Security with OAuth2 resource-server JWT support. One `SecurityFilterChain`:
   - stateless (no HTTP session);
   - CSRF disabled (bearer tokens are not sent automatically by browsers; 001 R12 already decided against CSRF tokens for the unauthenticated forms);
-  - `permitAll` for every 001 route and for `register`, `sign-in`, `refresh`, `sign-out` and `/verify-email`;
+  - `permitAll` for every 001 route, `/error` (so 404/405/415 error dispatches keep their status instead of becoming 401), and for `register`, `sign-in`, `refresh`, `sign-out` and `/complete-registration`;
   - `authenticated` for `/api/auth/me` and `/api/auth/password`.
 - **Rationale**: Signature, `exp`, `iss` and algorithm checks are security-critical, and the framework implementation is well tested. Writing our own filter would be more code to get wrong.
+- **Validators**: build the decoder's validator explicitly as `DelegatingOAuth2TokenValidator(issuer, JwtTimestampValidator(zero skew) with the injected Clock, SessionVersionValidator)`. Do **not** use `JwtValidators.createDefault…`, whose timestamp check reads the system clock and would reject every token minted with the test `MutableClock`.
 - **Watch**: Spring Security adds default response headers. 001's `Cache-Control: no-store` on `/reset-password` must still win; the existing `ResetPasswordPageTest` covers this.
 - **Alternatives**: Using the Nimbus JOSE library directly with a custom filter (less dependency weight, more security-sensitive code). An opaque access token with a DB lookup per request (gives up the owner's JWT choice).
 
@@ -49,14 +50,15 @@ Decisions build on 001 (`specs/001-reset-password/research.md`). Format: Decisio
   - **Email**: all mail is sent asynchronously after commit (001 R5).
   - **Responses**: one fixed response per endpoint.
 - **Rationale**: BCrypt (~250 ms) dominates the latency. Making every path do exactly one BCrypt operation keeps the medians within 50 ms.
-- **Registration branches** (all return the same response):
+- **Registration branches** (all return the same `202`; none hashes a password):
 
   | Email state | Action |
   |-------------|--------|
-  | new | create an `UNVERIFIED` account and send a verification link |
-  | `UNVERIFIED` | replace the pending password hash, invalidate old links, send a new link |
+  | no account | invalidate unused `registration_token` rows for the email, insert a new one, send the registration link |
   | `ACTIVE` | send the "attempted registration" notice |
   | `DISABLED` | send nothing |
+
+  Every branch does one account lookup and generates and hashes one token (as in 001 R5), so CPU work is symmetric. Only the "no account" branch writes a row, which is a millisecond-scale difference.
 
 ## R7. Throttling (FR-003b, FR-012, FR-016)
 
@@ -64,16 +66,16 @@ Decisions build on 001 (`specs/001-reset-password/research.md`). Format: Decisio
   - **`SignInThrottle`** (in memory, injected `Clock`):
     - Per email: a consecutive-failure count `n` and `nextAllowedAt = lastFailure + min(2^(n-1), 30) s`. While `now < nextAllowedAt`, the attempt returns the generic failure without checking the password. A success clears the entry. Unknown emails are tracked the same way.
     - Per IP: a sliding window of failures (20 per hour), recording failures only.
-  - **Registration**: the existing `RateLimiter` with 001's limits (3 per email per 15 min, 20 per IP per hour). The FR-003a resend counts against the same email key.
+  - **Registration**: the existing `RateLimiter` with 001's limits (3 per email per 15 min, 20 per IP per hour).
   - **Change password**: failed current-password checks are counted per account (5 per 15 min). Over the limit, the endpoint returns `429` without checking the password.
 - **Rationale**: The backoff stops brute force without letting an attacker lock out the real owner (clarification 5). The 429 for change password is not an enumeration risk, because the caller is already authenticated.
 - **Known limitation**: per instance, and reset on restart (as in 001 R6).
 
-## R8. Email verification link
+## R8. Registration link: choose the password after proving the mailbox
 
-- **Decision**: `GET /verify-email?token=` verifies on open (one conditional `UPDATE … SET used_at` plus `status = ACTIVE` in one transaction) and renders the result page with `Referrer-Policy: no-referrer`.
-- **Rationale**: Unlike a password reset, a mail scanner prefetching the link does no harm: it only proves the link reached that mailbox, which is the point of verification. So the extra confirm step that 001 uses for reset is unnecessary.
-- **Alternatives**: GET shows a confirm button and POST verifies (safer against prefetch, but one more step).
+- **Decision**: `POST /api/auth/register` takes only the email. The link opens `GET /complete-registration?token=`, which **checks** the token (read-only) and renders a choose-password form with the token in a hidden field. `POST /complete-registration` runs 001 `PasswordPolicy` (no "same as current"), then, in one transaction: a conditional `markUsedIfUsable` on the token, plus an insert of an ACTIVE `user_account` with the BCrypt hash. If the insert hits the unique email constraint (a racing completion, or the email was registered meanwhile), the transaction rolls back and the result is "invalid". Both pages send `Referrer-Policy: no-referrer` and `Cache-Control: no-store`.
+- **Rationale**: This fixes `/speckit-analyze` finding H1. Whoever sets the password has proven they can read the mailbox, so a victim clicking a link someone else requested only lets the victim choose their own password. GET never consumes the link, so mail scanners cannot burn it (same as 001 R11). There is no UNVERIFIED account state, which removes the "replace pending password" and "unverified sign-in" cases.
+- **Alternatives**: password at registration plus activate-on-open (vulnerable to pre-registration takeover); re-entering the registration password on the verify page (works, but is confusing for victims and keeps unverified accounts).
 
 ## R9. Change password keeps the current session
 
@@ -89,14 +91,14 @@ Decisions build on 001 (`specs/001-reset-password/research.md`). Format: Decisio
 
 ## R10. Logging and secrecy
 
-- **Decision**: New events: `auth.registered` (outcome `new`/`pending_updated`/`existing_notified`/`ignored`), `auth.email_verified`, `auth.sign_in` (`success`/`failure` + reason), `auth.refresh` (`success`/`invalid`/`reuse_revoked`), `auth.sign_out`, `auth.password_changed`, `auth.sessions_revoked` (reason, count). They carry account and session ids only. JWTs, refresh tokens, verification tokens, passwords and emails are never logged.
+- **Decision**: New events: `auth.registered` (outcome `link_sent`/`existing_notified`/`ignored`/`rate_limited`), `auth.registration_completed`, `auth.sign_in` (`success`/`failure` + reason), `auth.refresh` (`success`/`invalid`/`reuse_revoked`), `auth.sign_out`, `auth.password_changed`, `auth.sessions_revoked` (reason, count). They carry account and session ids only. JWTs, refresh tokens, registration tokens, passwords and emails are never logged.
 - **Tests**: `AuthSecrecyTest` extends 001's log and storage secrecy checks to the new flows and tables.
 
 ## R11. Testing approach
 
 - **Decision**:
-  - Reuse `IntegrationTestBase`, extended to clear `refresh_token`, `auth_session` and `email_verification_token`, reset `session_version`, and reset `SignInThrottle`.
+  - Reuse `IntegrationTestBase`, extended to clear the new tables and non-seeded accounts in FK-safe order (`refresh_token` → `auth_session` → `registration_token` → `password_reset_token` → non-seeded `user_account`), then reset seeded accounts (hash, status, `session_version`) and `SignInThrottle`.
   - JWT keys are generated per test context.
-  - `MutableClock` drives every expiry: 15 min, 7 d idle, 30 d cap, 24 h link, and backoff.
+  - `MutableClock` drives every expiry: 15 min, 7 d idle, 30 d cap, 24 h registration link, and backoff.
   - A concurrency test sends two parallel refreshes with the same token and expects exactly one 200, after which the session is revoked.
   - The SC-003 timing test is tagged `timing` and runs in the existing CI job.

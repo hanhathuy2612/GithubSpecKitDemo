@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-04
 
-**Status**: Draft
+**Status**: Ready (planned; revised after `/speckit-analyze`)
 
 **Input**: User description: "Auth service: đăng ký tài khoản, đăng nhập, đăng xuất và đổi mật khẩu khi đang đăng nhập. Người dùng đăng ký bằng email và mật khẩu; đăng nhập bằng email/mật khẩu nhận access token ngắn hạn và refresh token dài hạn (JWT access + refresh token); dùng refresh token để lấy access token mới; đăng xuất thu hồi refresh token; đổi mật khẩu yêu cầu mật khẩu hiện tại. Dùng chung kho tài khoản và quy tắc mật khẩu của tính năng 001-reset-password (8–64 ký tự, ≤72 byte UTF-8); sau khi đặt lại mật khẩu (001) hoặc đổi mật khẩu thì các phiên khác bị thu hồi. Không được lộ việc email đã tồn tại hay chưa."
 
@@ -15,8 +15,9 @@
 - Q: Do sign-up, sign-in and change-password need HTML pages like 001, or only an API? → A: API only for 002; only the email-verification link opens a minimal server-rendered page (like the 001 reset page).
 - Q: Are already-issued access credentials invalidated immediately after sign-out, password change or reset, or do they stay valid until they expire? → A: Password change or reset invalidates every access credential of the account immediately (via a per-account session version checked on each request); signing out one device lets its access credential expire naturally (≤ 15 minutes).
 - Q: Is the 7-day refresh lifetime sliding (extended on each refresh) or absolute from sign-in? → A: Sliding 7 days of inactivity, capped at 30 days absolute from the original sign-in; after that the user must sign in again.
-- Q: How should sign-in respond when an unverified account uses the correct password? → A: Same generic "Email or password is incorrect" response, but the system silently re-sends the verification link (counted against the registration email rate limit).
+- Q: How should sign-in respond when an unverified account uses the correct password? → A: Same generic "Email or password is incorrect" response, but the system silently re-sends the verification link (counted against the registration email rate limit). *(Superseded by the next answer: with password-on-verification there are no unverified accounts that hold a password, so this case no longer exists.)*
 - Q: Should repeated failed sign-ins for one email lock out the real owner for 15 minutes? → A: No per-email lockout; use per-email exponential backoff between attempts (1, 2, 4… s, max 30 s) plus a cap of 20 failed sign-ins per IP per hour.
+- Q (from `/speckit-analyze` finding H1): How do we stop someone from registering a victim's email with their own password and having the victim activate it by clicking the link (pre-registration account takeover)? → A: Register with the email only; the password is chosen on the page opened from the verification link, and the account is created only then.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -34,7 +35,7 @@ used to get a new access credential when the old one expires, without typing the
 **Acceptance Scenarios**:
 
 1. **Given** an active account, **When** the user signs in with the correct email and password, **Then** they receive an access credential valid for 15 minutes and a refresh credential that expires after 7 days without use and never later than 30 days after this sign-in, and "who am I" returns their account.
-2. **Given** a wrong password, an unknown email, a disabled account or an unverified account, **When** the user tries to sign in, **Then** they all get the same "Email or password is incorrect" response, and no credentials are issued.
+2. **Given** a wrong password, an unknown email, a disabled account, or an email whose registration was never completed, **When** the user tries to sign in, **Then** they all get the same "Email or password is incorrect" response, and no credentials are issued.
 3. **Given** an expired access credential, **When** it is used, **Then** the request is rejected as unauthenticated.
 4. **Given** a valid refresh credential, **When** the user refreshes, **Then** they get a new access credential and a new refresh credential, and the old refresh credential stops working (rotation).
 5. **Given** a refresh credential that was already rotated, **When** someone uses it again, **Then** it is rejected and every credential issued from that sign-in is revoked, because reuse signals theft.
@@ -43,22 +44,24 @@ used to get a new access credential when the old one expires, without typing the
 
 ### User Story 2 - Sign up with email verification (Priority: P1)
 
-A new person registers with email and password. They receive an email with a verification link.
-Once they open the link, the account becomes active and they can sign in.
+A new person enters only their email address. They receive an email with a link. On the page
+that the link opens, they choose their password. Only then is the account created, active, and
+able to sign in.
 
-**Why this priority**: Without it, the system only has seeded accounts. Verification is needed
-both to prove ownership of the address and to keep "email already registered" from being
-disclosed (FR-005).
+**Why this priority**: Without it, the system only has seeded accounts. Choosing the password
+only after proving ownership of the mailbox prevents pre-registration account takeover, where
+someone registers a victim's email with their own password. It also keeps "email already
+registered" from being disclosed (FR-010).
 
-**Independent Test**: Register `carol@example.com`, open the verification link from the email, and sign in.
+**Independent Test**: Register `carol@example.com`, open the link from the email, set a password on the page, and sign in.
 
 **Acceptance Scenarios**:
 
-1. **Given** an unused email, **When** the user registers with a password that meets the rules, **Then** they see "Check your email to finish creating your account", one verification email is sent, and the account cannot sign in until it is verified.
-2. **Given** an email that already has an account, **When** someone registers with it, **Then** they see exactly the same message as in scenario 1. No second account is created, and the existing owner gets an email saying "someone tried to create an account with your email; if it was you, sign in or reset your password".
-3. **Given** a verification link less than 24 hours old and not yet used, **When** it is opened, **Then** the account becomes active. A second use, an expired link and an unknown link all show "This link is invalid or has expired."
-4. **Given** an unverified account, **When** its owner tries to sign in with the correct password, **Then** they get the generic "Email or password is incorrect" response and a fresh verification link is emailed; with a wrong password, nothing is sent.
-5. **Given** a password that breaks the rules of 001 FR-011, or a confirmation that does not match, **When** the user registers, **Then** they see which rule failed and no email is sent.
+1. **Given** an email with no account, **When** the user registers with it, **Then** they see "Check your email to finish creating your account", one email with a registration link is sent, and no account exists yet.
+2. **Given** an email that already has an account, **When** someone registers with it, **Then** they see exactly the same message as in scenario 1. No account changes, and the existing owner gets an email saying "someone tried to create an account with your email; if it was you, sign in or reset your password". This email has no registration link.
+3. **Given** a registration link less than 24 hours old and not yet used, **When** it is opened, **Then** a "Choose your password" page is shown. Opening the link does not use it up. **When** a password that meets 001 FR-011 is submitted twice (password and confirmation), **Then** the account is created as active, the link stops working, and the page says "Your account is ready. You can now sign in."
+4. **Given** a used, expired, superseded, unknown or malformed link, **When** it is opened or submitted, **Then** the page shows "This link is invalid or has expired."
+5. **Given** a password that breaks 001 FR-011, or a confirmation that does not match, **When** it is submitted on the page, **Then** the page shows which rule failed, no account is created, and the link stays usable until it expires.
 
 ---
 
@@ -110,11 +113,14 @@ This restores the session sign-out that 001 FR-013 deferred.
 
 - After signing out one device, that device's already-issued access credential stays valid until it expires (at most 15 minutes); its refresh credential stops working immediately. After a password change or reset, **every** access credential of the account issued before the change is rejected immediately — including the current device's, which receives a fresh pair in the change-password response (FR-015a).
 - Two refreshes with the same refresh credential at the same moment: at most one succeeds. The other is treated as reuse (Story 1, scenario 5).
-- Registering the same new email twice before verifying: only the latest verification link works, and earlier links are invalidated.
-- An unverified registration that is never completed may be registered again with a new password. The latest registration wins.
+- Registering the same new email twice before completing: only the latest registration link works, and earlier links are invalidated.
+- A registration that is never completed leaves no account behind. The link simply expires after 24 hours.
+- Two completions racing for the same email (for example, two valid links submitted at once): at most one account is created; the other submission shows the invalid-link message.
 - Repeated failed sign-ins: no per-email lockout. After N consecutive failures for an email, the next attempt for that email is not evaluated until 2^(N-1) seconds have passed (1, 2, 4, 8, 16, then capped at 30 s); attempts inside that wait get the same generic failure without checking the password. A successful sign-in resets the counter. Unknown emails follow the same backoff, so behavior is identical. Separately, at most 20 failed sign-ins per IP per hour; over that, every sign-in from the IP gets the generic failure.
 - Repeated registrations: the same limits as 001 apply (3 per email per 15 minutes, 20 per IP per hour), with the same "check your email" response.
 - A disabled account is treated like a wrong password at sign-in, and its refresh credentials stop working.
+- A sign-in attempt rejected because of the per-email backoff skips the password check, so it returns faster. This reveals only that the email is currently throttled; unknown emails are throttled the same way, so it does not reveal whether an account exists.
+- After a password change the current device's refresh credential is rotated. The client must replace **both** credentials with the ones in the response. Presenting the old refresh credential afterwards counts as reuse and revokes the current sign-in too (FR-006).
 - Refreshing on day 29 of a session yields a refresh credential that still expires at the 30-day cap, not 7 days later; on or after the cap the refresh is rejected and the user must sign in again.
 - A tampered, malformed or wrongly signed access credential is rejected as unauthenticated, the same as an expired one.
 
@@ -126,8 +132,7 @@ This restores the session sign-out that 001 FR-013 deferred.
 
 - **FR-001**: Users MUST be able to sign in with email and password. Email is normalized as in 001 FR-003.
 - **FR-002**: A successful sign-in MUST issue an access credential valid for 15 minutes and a refresh credential. Each refresh credential expires 7 days after it was issued (idle timeout), and no refresh credential of a sign-in may be valid later than 30 days after that sign-in (absolute cap); refreshing never extends past the cap.
-- **FR-003**: Every sign-in failure (unknown email, wrong password, disabled or unverified account, rate-limited) MUST produce one identical response, and the response time MUST NOT reveal which case occurred (SC-003).
-- **FR-003a**: When an UNVERIFIED account signs in with the correct password, the system MUST return the same generic failure as FR-003 and MUST send a new verification link (invalidating older ones), subject to the FR-012 rate limit. No verification email is sent for a wrong password.
+- **FR-003**: Every sign-in failure (unknown email, wrong password, disabled account, rate-limited) MUST produce one identical response, and the response time MUST NOT reveal which case occurred (SC-003).
 - **FR-003b**: Sign-in throttling MUST NOT lock an account out for a fixed period. Per normalized email (known or unknown alike), consecutive failures impose an exponential wait before the next evaluated attempt (1 s doubling up to 30 s), reset by a success; attempts during the wait return the FR-003 response without checking the password. Per client IP, at most 20 failed sign-ins per rolling hour.
 - **FR-004**: A protected "who am I" capability MUST return the signed-in account (id and email) for a valid access credential, and reject missing, expired, malformed or tampered credentials identically.
 
@@ -140,10 +145,10 @@ This restores the session sign-out that 001 FR-013 deferred.
 
 **Sign up**
 
-- **FR-009**: Users MUST be able to register with an email, a password and a password confirmation. Password rules are those of 001 FR-011.
-- **FR-010**: The registration response MUST be identical whether or not the email already has an account. An existing owner receives an "attempted registration" notice instead of a verification link.
-- **FR-011**: A new account MUST stay unverified and unable to sign in until its verification link is used. The link is single-use, valid for 24 hours, and stored only as a one-way hash. A newer registration for the same unverified email invalidates older links and replaces the pending password.
-- **FR-011a**: The verification link MUST open a minimal server-rendered page that shows either "Your email is verified. You can now sign in." or "This link is invalid or has expired." All other capabilities of this feature are API-only.
+- **FR-009**: Users MUST be able to start registration with an email address only. The password is set later, on the registration page (FR-011a).
+- **FR-010**: The registration response MUST be identical whether or not the email already has an account. An existing ACTIVE owner receives an "attempted registration" notice with no registration link; a DISABLED owner receives nothing.
+- **FR-011**: For an email with no account, the system MUST send a registration link. The link is single-use, valid for 24 hours, and stored only as a one-way hash. A newer registration for the same email invalidates older links. No account exists until the link is completed.
+- **FR-011a**: The registration link MUST open a minimal server-rendered page. Opening it only checks the link and never consumes it. The page asks for a password and confirmation (001 FR-011 rules). A valid submission creates the ACTIVE account and consumes the link atomically, then shows "Your account is ready. You can now sign in." Invalid links show "This link is invalid or has expired." All other capabilities of this feature are API-only.
 - **FR-012**: Registration requests MUST be rate limited exactly as 001 FR-014.
 
 **Sign out**
@@ -160,24 +165,24 @@ This restores the session sign-out that 001 FR-013 deferred.
 **Cross-feature**
 
 - **FR-017**: Completing a 001 password reset MUST revoke all refresh credentials of the account and increment its session version (FR-015a).
-- **FR-018**: Raw credentials, verification tokens and passwords MUST NOT appear in logs, error messages or stored data (001 FR-015, Constitution IV).
+- **FR-018**: Raw credentials, registration tokens and passwords MUST NOT appear in logs, error messages or stored data (001 FR-015, Constitution IV).
 - **FR-019**: Every endpoint introduced by this feature MUST have automated tests covering success, validation failures and the edge cases above (Constitution III).
 
 ### Key Entities
 
-- **User Account** (from 001): gains a status `UNVERIFIED` in addition to `ACTIVE` and `DISABLED`, and a session version (FR-015a). Seeded accounts are `ACTIVE`.
-- **Email Verification**: one issued verification link for an unverified account. It holds a token hash, an expiry (24 hours) and a used or invalidated marker.
+- **User Account** (from 001): gains a session version (FR-015a). Statuses stay `ACTIVE` and `DISABLED`; accounts are created ACTIVE when registration completes. Seeded accounts are `ACTIVE`.
+- **Registration Invitation**: one issued registration link for an email address that has no account yet. It holds the normalized email, a token hash, an expiry (24 hours) and a used or invalidated marker.
 - **Sign-in Session (refresh credential family)**: one successful sign-in on one device. It holds the account, the sign-in time (for the 30-day cap), the current refresh credential (hashed) with its 7-day expiry, revocation state, and the chain of rotated credentials used to detect reuse.
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: A new user can go from registration to being signed in, including email verification, in under 3 minutes.
+- **SC-001**: A new user can go from entering their email to being signed in, including choosing a password on the registration page, in under 3 minutes.
 - **SC-002**: Registration responses for new and existing emails, and sign-in failures for every cause, are identical in message, status and structure in 100% of test cases.
 - **SC-003**: Median response time of sign-in with an unknown email vs. a wrong password, and of registration with a new vs. an existing email, differs by no more than 50 ms.
 - **SC-004**: 100% of revoked, rotated, expired or tampered credentials are rejected in automated tests. After a password change or reset, no other device can refresh, and every access credential issued before the change is rejected on its next use.
-- **SC-005**: Zero raw refresh credentials, verification tokens or passwords are found in stored data or logs during security review.
+- **SC-005**: Zero raw refresh credentials, registration tokens or passwords are found in stored data or logs during security review.
 
 ## Assumptions
 
@@ -186,5 +191,5 @@ This restores the session sign-out that 001 FR-013 deferred.
 - There is no limit on how many devices an account can be signed in on at once.
 - Signing out of all devices is not a separate action in this version. It happens through password change or reset.
 - There are no roles or permissions beyond "signed in": every active account has the same access.
-- The existing email infrastructure from 001 is reused. Sign-up, sign-in, refresh, sign-out, change-password and "who am I" are API-only; web pages for them are out of scope. The only new page is the minimal email-verification page opened from the link.
-- Lifetimes are fixed for this version: access 15 minutes, refresh 7 days idle / 30 days absolute, verification link 24 hours. Rate limits follow the defaults in Edge Cases.
+- The existing email infrastructure from 001 is reused. Sign-up, sign-in, refresh, sign-out, change-password and "who am I" are API-only; web pages for them are out of scope. The only new page is the minimal registration page opened from the link (choose password).
+- Lifetimes are fixed for this version: access 15 minutes, refresh 7 days idle / 30 days absolute, registration link 24 hours. Rate limits follow the defaults in Edge Cases.

@@ -13,6 +13,7 @@
 ### Session 2026-11-04
 
 - Q: Do sign-up, sign-in and change-password need HTML pages like 001, or only an API? → A: API only for 002; only the email-verification link opens a minimal server-rendered page (like the 001 reset page).
+- Q: Are already-issued access credentials invalidated immediately after sign-out, password change or reset, or do they stay valid until they expire? → A: Password change or reset invalidates every access credential of the account immediately (via a per-account session version checked on each request); signing out one device lets its access credential expire naturally (≤ 15 minutes).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -82,7 +83,7 @@ A signed-in user changes their password by entering the current password and a n
 
 **Acceptance Scenarios**:
 
-1. **Given** a signed-in user, **When** they enter the correct current password and a valid new password (001 FR-011 rules, different from the current one), **Then** the password changes, every **other** sign-in of the account is revoked, the current device stays signed in, and a "Your password was changed" email is sent.
+1. **Given** a signed-in user, **When** they enter the correct current password and a valid new password (001 FR-011 rules, different from the current one), **Then** the password changes, every **other** sign-in of the account is revoked, all previously issued access credentials stop working immediately, the current device receives a fresh credential pair and stays signed in, and a "Your password was changed" email is sent.
 2. **Given** a wrong current password, **When** they try to change it, **Then** the password is not changed and they see "Current password is incorrect".
 3. **Given** a new password that breaks a rule, **When** they submit it, **Then** they see which rule failed and nothing changes.
 
@@ -103,7 +104,7 @@ This restores the session sign-out that 001 FR-013 deferred.
 
 ### Edge Cases
 
-- Access credentials are not stored server-side. After sign-out, a password change or a password reset, an access credential that was already issued stays valid until it expires (at most 15 minutes). Refresh credentials stop working immediately.
+- After signing out one device, that device's already-issued access credential stays valid until it expires (at most 15 minutes); its refresh credential stops working immediately. After a password change or reset, **every** access credential of the account issued before the change is rejected immediately — including the current device's, which receives a fresh pair in the change-password response (FR-015a).
 - Two refreshes with the same refresh credential at the same moment: at most one succeeds. The other is treated as reuse (Story 1, scenario 5).
 - Registering the same new email twice before verifying: only the latest verification link works, and earlier links are invalidated.
 - An unverified registration that is never completed may be registered again with a new password. The latest registration wins.
@@ -146,17 +147,18 @@ This restores the session sign-out that 001 FR-013 deferred.
 
 - **FR-014**: A signed-in user MUST be able to change their password by providing the current password and a new password plus confirmation that satisfy 001 FR-011 (8–64 characters, ≤ 72 UTF-8 bytes, different from the current password).
 - **FR-015**: A successful change MUST revoke every other sign-in of the account, keep the current one, and send the "Your password was changed" email.
+- **FR-015a**: Each account MUST carry a session version that is embedded in every access credential and checked on every protected request. A password change or a 001 password reset MUST increment it, so all access credentials issued before the change are rejected immediately. The change-password response MUST return a new access and refresh credential pair for the current device.
 - **FR-016**: Failed current-password checks MUST be rate limited (5 per account per 15 minutes) so a stolen access credential cannot be used to brute-force the password.
 
 **Cross-feature**
 
-- **FR-017**: Completing a 001 password reset MUST revoke all refresh credentials of the account.
+- **FR-017**: Completing a 001 password reset MUST revoke all refresh credentials of the account and increment its session version (FR-015a).
 - **FR-018**: Raw credentials, verification tokens and passwords MUST NOT appear in logs, error messages or stored data (001 FR-015, Constitution IV).
 - **FR-019**: Every endpoint introduced by this feature MUST have automated tests covering success, validation failures and the edge cases above (Constitution III).
 
 ### Key Entities
 
-- **User Account** (from 001): gains a status `UNVERIFIED` in addition to `ACTIVE` and `DISABLED`. Seeded accounts are `ACTIVE`.
+- **User Account** (from 001): gains a status `UNVERIFIED` in addition to `ACTIVE` and `DISABLED`, and a session version (FR-015a). Seeded accounts are `ACTIVE`.
 - **Email Verification**: one issued verification link for an unverified account. It holds a token hash, an expiry (24 hours) and a used or invalidated marker.
 - **Sign-in Session (refresh credential family)**: one successful sign-in on one device. It holds the account, the current refresh credential (hashed), expiry, revocation state, and the chain of rotated credentials used to detect reuse.
 
@@ -167,13 +169,13 @@ This restores the session sign-out that 001 FR-013 deferred.
 - **SC-001**: A new user can go from registration to being signed in, including email verification, in under 3 minutes.
 - **SC-002**: Registration responses for new and existing emails, and sign-in failures for every cause, are identical in message, status and structure in 100% of test cases.
 - **SC-003**: Median response time of sign-in with an unknown email vs. a wrong password, and of registration with a new vs. an existing email, differs by no more than 50 ms.
-- **SC-004**: 100% of revoked, rotated, expired or tampered credentials are rejected in automated tests. After a password change or reset, no other device can refresh.
+- **SC-004**: 100% of revoked, rotated, expired or tampered credentials are rejected in automated tests. After a password change or reset, no other device can refresh, and every access credential issued before the change is rejected on its next use.
 - **SC-005**: Zero raw refresh credentials, verification tokens or passwords are found in stored data or logs during security review.
 
 ## Assumptions
 
 - **Credential format**: the project owner chose self-contained signed access tokens (JWT) and refresh tokens. The plan picks the signing algorithm, the key handling and the server-side refresh store.
-- Access credentials are not revoked individually. Their 15-minute lifetime bounds the exposure after sign-out or a password change (see Edge Cases).
+- Access credentials are not revoked one by one: sign-out of a single device relies on the 15-minute lifetime, while password change/reset invalidates all of an account's access credentials at once through a per-account session version (FR-015a).
 - There is no limit on how many devices an account can be signed in on at once.
 - Signing out of all devices is not a separate action in this version. It happens through password change or reset.
 - There are no roles or permissions beyond "signed in": every active account has the same access.

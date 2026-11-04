@@ -53,7 +53,7 @@ the old one.
 **Acceptance Scenarios**:
 
 1. **Given** a reset link issued less than 15 minutes ago and never used, **When** the user submits a valid new password, **Then** the password is updated, the user sees a success message, and the credential check accepts the new password.
-2. **Given** a valid link, **When** the user submits a new password shorter than 8 or longer than 64 characters, identical to the current password, or with a confirmation that does not match, **Then** the system shows a validation error, the password is not changed, and the link remains usable until it expires.
+2. **Given** a valid link, **When** the user submits a new password shorter than 8 or longer than 64 characters (or over 72 UTF-8 bytes), identical to the current password, or with a confirmation that does not match, **Then** the system shows a validation error, the password is not changed, and the link remains usable until it expires.
 3. **Given** a password was successfully reset, **When** the old password is checked against the account, **Then** the credential check rejects it.
 
 ---
@@ -121,7 +121,7 @@ a link after 15 minutes. Both must be rejected without changing the password.
 - **FR-008**: Issuing a new reset link for an account MUST invalidate all previously issued unused links for that account.
 - **FR-009**: The reset link MUST contain an unguessable token generated from a cryptographically secure random source.
 - **FR-010**: The system MUST NOT store the reset token in plain text; only a one-way hash of the token may be persisted (Constitution IV).
-- **FR-011**: Opening a valid link MUST let the user enter and confirm a new password. The new password MUST be 8–64 characters long (no character-class requirements), MUST match its confirmation, and MUST differ from the current password; otherwise the system shows a validation error stating which rule failed.
+- **FR-011**: Opening a valid link MUST let the user enter and confirm a new password. The new password MUST be 8–64 characters long and at most 72 bytes when UTF-8 encoded (both limits report the same "too long" error; no character-class requirements), MUST match its confirmation, and MUST differ from the current password; otherwise the system shows a validation error stating which rule failed.
 - **FR-012**: Invalid, expired, used, or unknown links MUST all produce the same "invalid or expired" message and offer a way to request a new link.
 - **FR-013**: On successful reset, the system MUST update the password and mark the link as used, as a single atomic operation.
 - **FR-014**: The system MUST rate-limit reset requests to at most 3 per normalized email per rolling 15 minutes and at most 20 per client IP address per rolling hour. Requests over the limit MUST NOT issue a link or send an email, and MUST receive the same generic confirmation as any other request (no disclosure of throttling).
@@ -150,5 +150,5 @@ a link after 15 minutes. Both must be rejected without changing the password.
 
 - Accounts exist only as seeded records in a minimal account store; registration, sign-in endpoints and session management are out of scope (sign-in and session sign-out can be added by a later feature).
 - An SMTP server (real or local mail-catcher) is reachable at runtime; its settings come from environment configuration.
-- Password policy for this feature is defined in FR-011 (8–64 characters, must differ from current password); no breached-password list check in this version.
+- Password policy for this feature is defined in FR-011 (8–64 characters and ≤ 72 UTF-8 bytes, must differ from current password); the byte limit comes from the password-hashing algorithm's input limit. No breached-password list check in this version.
 - Only one language for the messages is required initially; localization is out of scope.

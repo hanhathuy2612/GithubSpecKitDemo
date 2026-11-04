@@ -5,6 +5,8 @@ description: "Task list for 002-user-auth (Sign Up, Sign In, Sign Out, Change Pa
 
 # Tasks: User Authentication – Sign Up, Sign In, Sign Out, Change Password
 
+> **Status: COMPLETED and FROZEN (2026-11-04).** Implementation log; later changes start from `spec.md`.
+
 **Input**: `specs/002-user-auth/spec.md`, `plan.md` (incl. Design Summary), `research.md` (R1–R11). Revised after `/speckit-analyze` (H1 → password-on-verification; U1–U3, G1, G2 fixed).
 
 **Tests**: REQUIRED (spec FR-019, Constitution III). Each story writes its tests first and checks that they FAIL before implementing. Lessons from 001 apply: every api/page test extends `IntegrationTestBase`; test doubles use `@Primary`; email is sent `afterCommit`.
@@ -260,19 +262,19 @@ The same single project as 001:
 
 ## Phase 8: Polish & Cross-Cutting
 
-- [ ] T041 [P] SC-003 timing test `test/api/AuthEnumerationTimingTest.java`, tagged `@Tag("timing")`. After a warm-up, take the median of 30 samples for each pair and assert a difference of ≤ 50 ms:
+- [X] T041 [P] SC-003 timing test `test/api/AuthEnumerationTimingTest.java`, tagged `@Tag("timing")`. After a warm-up, take the median of 30 samples for each pair and assert a difference of ≤ 50 ms:
   - sign-in with an unknown email vs. a wrong password;
   - registration with a new vs. an existing (ACTIVE) email.
 
   Reset `SignInThrottle` and `RateLimiter` before each sample.
-- [ ] T042 [P] Secrecy test `test/api/AuthSecrecyTest.java`. Use `OutputCaptureExtension` across register → complete registration → sign-in → refresh → change password → sign-out, and check:
+- [X] T042 [P] Secrecy test `test/api/AuthSecrecyTest.java`. Use `OutputCaptureExtension` across register → complete registration → sign-in → refresh → change password → sign-out, and check:
   - logs contain no access token, refresh token, registration token, password or email, but do contain the `auth.*` event names;
   - every `refresh_token.token_hash` and `registration_token.token_hash` matches `^[0-9a-f]{64}$`, and no column contains a captured raw token.
-- [ ] T043 [P] Update living docs:
+- [X] T043 [P] Update living docs:
   - `README.md`: the 002 row in the Documents table, the endpoints, `APP_JWT_PRIVATE_KEY`/`APP_JWT_KEY_ID` in the env table (with how to generate a P-256 PKCS#8 key using `openssl`), and the manual check steps for 002;
   - the `specs/001-reset-password/plan.md` Design Summary: note that reset now also revokes sessions (002 FR-017).
-- [ ] T044 Run `./gradlew clean test` and `./gradlew test -PincludeTags=timing`. Then run the manual check with `bootRun` and `curl`: register, complete registration via the link in the captured mail, sign in, `/me`, refresh, change password, the old token → 401, sign-out. Append the results to this file
-- [ ] T045 Constitution review: controllers in `web/` import no repository, mail or security internals beyond `Jwt`; every endpoint in plan.md › Interfaces has tests; refresh and registration tokens are hashed only; secrets come from env. Mark `tasks.md` frozen and set the spec Status to `Implemented`
+- [X] T044 Run `./gradlew clean test` and `./gradlew test -PincludeTags=timing`. Then run the manual check with `bootRun` and `curl`: register, complete registration via the link in the captured mail, sign in, `/me`, refresh, change password, the old token → 401, sign-out. Append the results to this file
+- [X] T045 Constitution review: controllers in `web/` import no repository, mail or security internals beyond `Jwt`; every endpoint in plan.md › Interfaces has tests; refresh and registration tokens are hashed only; secrets come from env. Mark `tasks.md` frozen and set the spec Status to `Implemented`
 
 ---
 
@@ -316,3 +318,29 @@ Task: "T020 SignInThrottle"       Task: "T023 auth DTOs"
 
 - The 001 suite must stay green after every phase (Spring Security now wraps every route).
 - After delivery this file is frozen, as in 001. Later changes start from `spec.md`.
+
+## Validation results (T044, T045), 2026-11-04
+
+- `./gradlew clean test`: 149 tests, 0 failures. `./gradlew test -PincludeTags=timing`: 3 tests, 0 failures.
+  - SC-003 sign-in medians: unknown email 294.8 ms, wrong password 293.7 ms.
+  - SC-003 registration medians: new email 6.0 ms, existing email 3.4 ms.
+  - The 001 timing check SC-004 still passes.
+- Manual check with `bootRun` using a real `openssl` P-256 key pair from `APP_JWT_*` (`kid` `manual-1`). The local SMTP sink stood in for Mailpit (no Docker daemon here). All 12 steps passed:
+  1. Register (a `password` field sent by an "attacker" is ignored).
+  2. An existing email gets the notice, with an identical response.
+  3. The link opens twice without being consumed; the password is chosen and the account becomes ready.
+  4. The attacker's password → 401.
+  5–7. Sign in, `/me`, then refresh rotates the token.
+  8–10. Change password → a new pair; the old access token → 401 and the new one → 200.
+  11. Sign out → 204, then refresh → 401.
+  12. No token, password or email in the log; only `auth.*` events with ids.
+- Deviations found during implementation, recorded in research and plan:
+  - `APP_JWT_PUBLIC_KEY` is also required, because the JDK cannot derive an EC public key.
+  - A strict `exp` validator was added: Spring's `JwtTimestampValidator` accepts a token at exactly `exp`, which RFC 7519 forbids. `MeApiTest` caught this.
+  - The secrecy test excludes `registration_token.email`, which is stored by design.
+- Constitution review (T045):
+  - I: controllers in `web/` import no repository, mail, domain or ratelimit types.
+  - II: rules live in `service/auth/*` and `SignInThrottle`.
+  - III: every endpoint in plan.md › Interfaces has MockMvc tests, and CI runs both jobs.
+  - IV: refresh and registration tokens are SHA-256 only, passwords are BCrypt, and the signing key comes from env.
+

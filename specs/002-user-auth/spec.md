@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-04
 
-**Status**: Ready (planned; revised after `/speckit-analyze`)
+**Status**: Implemented (2026-11-04)
 
 **Input**: User description: "Auth service: đăng ký tài khoản, đăng nhập, đăng xuất và đổi mật khẩu khi đang đăng nhập. Người dùng đăng ký bằng email và mật khẩu; đăng nhập bằng email/mật khẩu nhận access token ngắn hạn và refresh token dài hạn (JWT access + refresh token); dùng refresh token để lấy access token mới; đăng xuất thu hồi refresh token; đổi mật khẩu yêu cầu mật khẩu hiện tại. Dùng chung kho tài khoản và quy tắc mật khẩu của tính năng 001-reset-password (8–64 ký tự, ≤72 byte UTF-8); sau khi đặt lại mật khẩu (001) hoặc đổi mật khẩu thì các phiên khác bị thu hồi. Không được lộ việc email đã tồn tại hay chưa."
 

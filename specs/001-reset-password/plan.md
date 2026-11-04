@@ -116,7 +116,7 @@ Short reference for reviewers. The linked code and tests are authoritative.
 | `user_account` | `email` unique and stored normalized (trimmed, lower-case); `password_hash` BCrypt(12); `status` `ACTIVE`/`DISABLED`; seeded only (alice, bob active; disabled@ disabled; password `demo-password-1`) | `db/migration/V1__schema.sql`, `V2__seed_accounts.sql` |
 | `password_reset_token` | `token_hash` = SHA-256 hex (64 chars, unique), never the raw token; `expires_at = issued_at + 15 min`; `used_at` and `invalidated_at` are nullable | `V1__schema.sql`, `domain/PasswordResetToken.java` |
 
-**Token lifecycle:** a token is usable only while `used_at IS NULL AND invalidated_at IS NULL AND now < expires_at` (strict, so it is expired at exactly 15:00). Issuing a new token invalidates the account's unused tokens. A successful reset sets `used_at` through a conditional UPDATE in the same transaction as the password change (R8). Used, invalidated, expired, unknown and malformed tokens are all reported identically.
+**Token lifecycle:** a token is usable only while `used_at IS NULL AND invalidated_at IS NULL AND now < expires_at` (strict, so it is expired at exactly 15:00). Issuing a new token invalidates the account's unused tokens. A successful reset sets `used_at` through a conditional UPDATE in the same transaction as the password change (R8). Since 002, the same transaction also revokes all sign-in sessions and bumps the account's session version (002 FR-017). Used, invalidated, expired, unknown and malformed tokens are all reported identically.
 
 **Rate limits (in memory, R6):** 3 per normalized email per rolling 15 minutes, and 20 per client IP per rolling hour. Checked before the account lookup.
 

@@ -129,7 +129,7 @@ Short reference for reviewers. Once implemented, the code and tests are authorit
 | `GET /api/auth/me` (Bearer) | `200 {id, email}` | `401` + `WWW-Authenticate: Bearer` for missing, expired, tampered or stale-version tokens | `MeApiTest` |
 | `POST /api/auth/password` (Bearer) `{currentPassword,newPassword,confirmPassword}` | `200` with a new pair for this session; other sessions revoked; version bumped; notification sent | `400 /problems/validation` (`WRONG_CURRENT_PASSWORD` + 001 codes); `429 /problems/too-many-attempts` after 5 wrong current passwords in 15 min | `ChangePasswordApiTest` |
 
-**JWT** (R1–R3): ES256, header `kid`. Claims: `iss=reset-password-demo`, `sub=<account id>`, `sid=<session id>`, `sv=<session version>`, `iat`, `exp=iat+15 min`, `jti`. No email or other PII.
+**JWT** (R1–R3): ES256, header `kid`. Validation: issuer, timestamp (injected Clock), a strict `now < exp` check (Spring's timestamp validator accepts the exact `exp` instant), and the session version. Keys come from `APP_JWT_PRIVATE_KEY` and `APP_JWT_PUBLIC_KEY`. Claims: `iss=reset-password-demo`, `sub=<account id>`, `sid=<session id>`, `sv=<session version>`, `iat`, `exp=iat+15 min`, `jti`. No email or other PII.
 
 **Emails**: registration link `${APP_BASE_URL}/complete-registration?token=…` ("expires in 24 hours"); "Someone tried to create an account with your email" (no link to sign up, only to sign in or reset); the existing "Your password was changed".
 

@@ -153,6 +153,11 @@ public class PasswordResetService {
             log.info("password_reset.rejected reason=missing");
             return Optional.empty();
         }
+        if (!tokenGenerator.isWellFormed(rawToken)) {
+            // Malformed input never reaches the database; reported like any other invalid link (FR-012).
+            log.info("password_reset.rejected reason=malformed");
+            return Optional.empty();
+        }
         Instant now = clock.instant();
         Optional<PasswordResetToken> token = tokens.findByTokenHash(tokenGenerator.hash(rawToken));
         if (token.isEmpty()) {

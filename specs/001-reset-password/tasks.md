@@ -213,19 +213,19 @@ Single Gradle project at the repository root (plan.md › Project Structure):
 
 ### Tests for User Story 4 ⚠️ (write first, must FAIL)
 
-- [ ] T048 [P] [US4] Unit tests for token rejection in `src/test/java/com/example/resetpassword/unit/PasswordResetServiceRejectionTest.java`:
+- [X] T048 [P] [US4] Unit tests for token rejection in `src/test/java/com/example/resetpassword/unit/PasswordResetServiceRejectionTest.java`:
   - at `issued_at + 14:59.999` → usable; at exactly `issued_at + 15:00` → `INVALID_OR_EXPIRED`;
   - used → invalid; invalidated by a newer token → invalid;
   - unknown and malformed (wrong length or characters) → invalid without a DB lookup for the malformed case;
   - the password is unchanged in every case.
-- [ ] T049 [P] [US4] API rejection tests in `src/test/java/com/example/resetpassword/api/InvalidTokenApiTest.java`: expired, reused, invalidated, unknown and malformed tokens all return a byte-identical 400 Problem `/problems/invalid-reset-token`. Token checks take precedence over password-rule errors (an invalid token with a too-short password still gets `invalid-reset-token`)
-- [ ] T050 [P] [US4] Concurrency test in `src/test/java/com/example/resetpassword/api/ConcurrentConfirmApiTest.java`: two threads submit a valid confirm with the same token at the same time (`CountDownLatch`). Exactly one 200 and one 400 `invalid-reset-token`, and exactly one changed-password email
-- [ ] T051 [P] [US4] Page rejection tests in `src/test/java/com/example/resetpassword/page/InvalidLinkPageTest.java`: GET and POST `/reset-password` with expired, used, invalidated, unknown, malformed or missing `token` render `reset-invalid` with the text "This link is invalid or has expired." and a link to `/forgot-password`
+- [X] T049 [P] [US4] API rejection tests in `src/test/java/com/example/resetpassword/api/InvalidTokenApiTest.java`: expired, reused, invalidated, unknown and malformed tokens all return a byte-identical 400 Problem `/problems/invalid-reset-token`. Token checks take precedence over password-rule errors (an invalid token with a too-short password still gets `invalid-reset-token`)
+- [X] T050 [P] [US4] Concurrency test in `src/test/java/com/example/resetpassword/api/ConcurrentConfirmApiTest.java`: two threads submit a valid confirm with the same token at the same time (`CountDownLatch`). Exactly one 200 and one 400 `invalid-reset-token`, and exactly one changed-password email
+- [X] T051 [P] [US4] Page rejection tests in `src/test/java/com/example/resetpassword/page/InvalidLinkPageTest.java`: GET and POST `/reset-password` with expired, used, invalidated, unknown, malformed or missing `token` render `reset-invalid` with the text "This link is invalid or has expired." and a link to `/forgot-password`
 
 ### Implementation for User Story 4
 
-- [ ] T052 [US4] Harden token resolution in `src/main/java/com/example/resetpassword/service/PasswordResetService.java`. In both `checkToken` and `resetPassword`, first check `TokenGenerator.isWellFormed` (malformed → `INVALID_OR_EXPIRED` without a lookup). Resolve the token with `isUsable(clock.instant())` before running `PasswordPolicy`. Map every failure reason to the single `INVALID_OR_EXPIRED` outcome, keeping the reason only in the log
-- [ ] T053 [US4] Make `PasswordResetPageController` in `src/main/java/com/example/resetpassword/web/page/PasswordResetPageController.java` render `reset-invalid` for a missing or blank `token` parameter on GET and POST, instead of a framework 400 page
+- [X] T052 [US4] Harden token resolution in `src/main/java/com/example/resetpassword/service/PasswordResetService.java`. In both `checkToken` and `resetPassword`, first check `TokenGenerator.isWellFormed` (malformed → `INVALID_OR_EXPIRED` without a lookup). Resolve the token with `isUsable(clock.instant())` before running `PasswordPolicy`. Map every failure reason to the single `INVALID_OR_EXPIRED` outcome, keeping the reason only in the log
+- [X] T053 [US4] Make `PasswordResetPageController` in `src/main/java/com/example/resetpassword/web/page/PasswordResetPageController.java` render `reset-invalid` for a missing or blank `token` parameter on GET and POST, instead of a framework 400 page
 
 **Checkpoint**: T048–T051 pass and all earlier tests still pass. SC-002 is verified.
 
